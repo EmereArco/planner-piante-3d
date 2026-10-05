@@ -1,0 +1,909 @@
+<!doctype html>
+<html lang="it">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Planner piante 3D</title>
+<style>*,*::before,*::after{box-sizing:border-box}body{margin:0}[hidden]{display:none!important}</style>
+</head>
+<body>
+<script>
+// Versione autonoma: fuori da claude.ai i file vengono scaricati direttamente dal browser.
+if(!window.claude)window.claude={use:async n=>n==='downloads'?{save:async r=>{const b=r.data instanceof Blob?r.data:new Blob([r.data]),a=document.createElement('a');a.href=URL.createObjectURL(b);a.download=r.filename;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(a.href),4000);return {status:'saved'};}}:null};
+</script>
+
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600&family=Barlow+Condensed:wght@500;600&display=swap">
+<style>
+/* Layout: barra dei progetti in alto, pannello di importazione a comparsa, plastico a sinistra con i comandi sotto, pannello muri e mobili a fianco (sotto su schermi stretti), poi dati e ipotesi in due colonne */
+:root{
+  --bg:#e9edf1; --panel:#f7f9fb; --fg:#18222e; --muted:#566475; --line:#c5cdd6; --accent:#0c6a86; --scene:#dfe5ea; --mark:#b3261e;
+  --display:"Barlow Condensed","Arial Narrow",sans-serif; --body:"Barlow","Segoe UI",system-ui,sans-serif;
+}
+@media (prefers-color-scheme: dark){ :root:not([data-theme="light"]){ --bg:#12181f; --panel:#1a222b; --fg:#e6ebf0; --muted:#9aa8b6; --line:#313c48; --accent:#5cc0de; --scene:#1c252e; --mark:#ff9a8a; color-scheme:dark } }
+:root[data-theme="dark"]{ --bg:#12181f; --panel:#1a222b; --fg:#e6ebf0; --muted:#9aa8b6; --line:#313c48; --accent:#5cc0de; --scene:#1c252e; --mark:#ff9a8a; color-scheme:dark }
+body{background:var(--bg);color:var(--fg);font-family:var(--body);font-size:16px;line-height:1.5}
+.wrap{max-width:1440px;margin:0 auto;padding-inline:16px;padding-block:24px 40px;display:flex;flex-direction:column;gap:18px}
+header{display:flex;flex-direction:column;gap:4px}
+h1{font-family:var(--display);font-weight:600;font-size:clamp(28px,5vw,40px);line-height:1.05;margin:0;letter-spacing:.01em;text-wrap:balance;overflow-wrap:anywhere}
+.sub{color:var(--muted);margin:0;max-width:65ch}
+.eyebrow{font-family:var(--display);text-transform:uppercase;letter-spacing:.12em;font-size:13px;color:var(--accent);font-weight:600}
+.stage{position:relative;background:var(--scene);border:1px solid var(--line);border-radius:6px;overflow:hidden;aspect-ratio:4/3;max-height:78vh;width:100%;max-width:100%;min-height:320px}
+#gl{display:block;width:100%;height:100%;touch-action:none;cursor:grab;outline-offset:-3px}
+#gl:active{cursor:grabbing}
+canvas:focus-visible{outline:2px solid var(--accent)}
+.lab{position:absolute;left:0;top:0;transform:translate(-50%,-50%);pointer-events:none;text-align:center;white-space:nowrap;
+  font-family:var(--display);font-weight:600;font-size:14px;line-height:1.1;color:var(--fg);background:color-mix(in srgb,var(--panel) 82%,transparent);padding:2px 6px;border-radius:3px}
+.lab small{display:block;font-weight:500;font-size:12px;color:var(--muted);font-variant-numeric:tabular-nums}
+.ov{position:absolute;inset:0;width:100%;height:100%;pointer-events:none;z-index:2}
+.ov line{stroke:var(--mark);stroke-width:2}
+.ov circle{fill:var(--mark)}
+.ov text{font-family:var(--display);font-weight:600;font-size:15px;fill:var(--mark);stroke:var(--panel);stroke-width:4px;paint-order:stroke;text-anchor:middle;dominant-baseline:central;font-variant-numeric:tabular-nums}
+.hint{position:absolute;left:12px;bottom:10px;font-size:12.5px;color:var(--muted);background:color-mix(in srgb,var(--panel) 82%,transparent);padding:2px 8px;border-radius:3px;pointer-events:none}
+.err{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;padding:24px;text-align:center;color:var(--muted)}
+.controls{display:flex;flex-wrap:wrap;gap:12px 22px;align-items:center}
+.controls label{display:flex;align-items:center;gap:8px;font-size:15px}
+.controls output{font-variant-numeric:tabular-nums;min-width:4.2ch;font-weight:600}
+input[type=range]{width:min(220px,46vw);accent-color:var(--accent)}
+input[type=checkbox],input[type=radio]{accent-color:var(--accent);width:17px;height:17px}
+button,select{font:inherit;font-size:15px;color:var(--fg);background:var(--panel);border:1px solid var(--line);border-radius:4px;padding:6px 12px;cursor:pointer}
+select{max-width:min(320px,70vw)}
+button:hover,select:hover{border-color:var(--accent)}
+button:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+button.primary{background:var(--accent);border-color:var(--accent);color:var(--panel);font-weight:600}
+.cols{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:22px 36px}
+.cols>div{min-width:0}
+h2{font-family:var(--display);font-weight:600;font-size:20px;margin:0 0 8px;letter-spacing:.02em}
+table{border-collapse:collapse;width:100%;font-size:15px}
+td,th{padding:5px 0;border-bottom:1px solid var(--line);text-align:left;font-weight:400}
+td:last-child,th:last-child{text-align:right;font-variant-numeric:tabular-nums}
+tr.tot td{font-weight:600;border-bottom:0}
+tr.sep td{padding-top:14px}
+.sw{display:inline-block;width:11px;height:11px;border-radius:2px;margin-right:8px;vertical-align:baseline;border:1px solid var(--line)}
+@media (max-width:560px){.lab{font-size:12px;padding:1px 4px}.lab small{display:none}.hint{display:none}}
+.work{display:grid;grid-template-columns:minmax(0,1fr) minmax(300px,360px);gap:20px;align-items:start}
+.view{display:flex;flex-direction:column;gap:14px;min-width:0}
+@media (max-width:900px){.work{grid-template-columns:minmax(0,1fr)}}
+.furn,.imp{display:flex;flex-direction:column;gap:12px;min-width:0;background:var(--panel);border:1px solid var(--line);border-radius:6px;padding:14px 16px 16px}
+.furn button,.furn input,.imp button:not(.primary),.imp input,.imp select{background:var(--bg)}
+.furn h2,.imp h2{margin:0}
+.tools{display:flex;flex-wrap:wrap;gap:6px}
+.tools button[aria-pressed="true"]{border-color:var(--accent);box-shadow:inset 0 0 0 1px var(--accent);font-weight:600}
+.furn hr{border:0;border-top:1px solid var(--line);margin:4px 0;width:100%}
+.note{font-size:14px;color:var(--muted);margin:8px 0 0}
+#fb{margin:10px 0 0;padding:12px;border:1px solid var(--line);border-radius:8px;background:var(--panel)}#fb textarea{display:block;width:100%;box-sizing:border-box;height:120px;margin:8px 0;font:12px/1.4 ui-monospace,Menlo,Consolas,monospace;color:var(--fg);background:var(--bg);border:1px solid var(--line);border-radius:6px;padding:8px;resize:vertical}#fb img{display:block;max-width:100%;margin:8px 0;border:1px solid var(--line);border-radius:6px}
+.msg{font-size:14px;color:var(--muted)}
+.furn p,.imp p{margin:0;color:var(--muted);max-width:70ch;font-size:15px}
+.presets{display:grid;grid-template-columns:repeat(auto-fill,minmax(138px,1fr));gap:8px}
+.presets button{text-align:left;line-height:1.2;padding:6px 10px}
+.presets button small{display:block;color:var(--muted);font-variant-numeric:tabular-nums;font-size:13px}
+input[type=number],input[type=text]{font:inherit;font-size:15px;color:var(--fg);background:var(--panel);border:1px solid var(--line);border-radius:4px;padding:5px 8px;width:4.6em}
+input[type=text]{width:10em}
+input[type=file]{font:inherit;font-size:14px;max-width:100%}
+.flist{list-style:none;padding:0;margin:0;display:flex;flex-wrap:wrap;gap:6px}
+.flist li{margin:0}
+.flist button{font-size:14px;padding:4px 10px}
+.flist button[aria-pressed="true"]{border-color:var(--accent);box-shadow:inset 0 0 0 1px var(--accent)}
+button:disabled{opacity:.5;cursor:default}
+#selname{font-weight:600;min-width:0}
+ul{margin:0;padding-left:18px;color:var(--muted);font-size:15px}
+li{margin-bottom:5px}
+.proj{border-block:1px solid var(--line);padding-block:10px}
+.wrap.home>*:not(#home):not(#imp){display:none}
+.wrap:not(.home)>#home{display:none}
+#home{display:flex;flex-direction:column;gap:18px;padding-block:4vh 0}
+.hcards{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:14px}
+.hcard{display:flex;flex-direction:column;gap:10px;align-items:flex-start;padding:18px;border:1px solid var(--line);border-radius:8px;background:var(--panel)}
+.hcard h2{margin:0}.hcard p{margin:0;color:var(--muted);flex:1}
+#hpbox textarea{display:block;width:100%;height:120px;margin:0 0 10px;font:12px/1.4 ui-monospace,Menlo,Consolas,monospace;color:var(--fg);background:var(--panel);border:1px solid var(--line);border-radius:6px;padding:8px;resize:vertical}
+#hlistbox h2{margin:0 0 10px}
+.roomctl{margin-top:12px}
+#tab input[type=text]{width:min(100%,14em);background:var(--panel)}
+.impgrid{display:grid;grid-template-columns:minmax(0,1.5fr) minmax(260px,1fr);gap:18px;align-items:start}
+@media (max-width:900px){.impgrid{grid-template-columns:minmax(0,1fr)}}
+.pvbox{position:relative;background:var(--scene);border:1px solid var(--line);border-radius:4px;min-height:180px;display:flex;align-items:center;justify-content:center;overflow:hidden}
+#ipv{display:block;width:100%;height:auto;max-height:70vh;object-fit:contain;touch-action:none;cursor:crosshair}
+.pvbox .empty{padding:24px;text-align:center;color:var(--muted);font-size:15px}
+.steps{display:flex;flex-direction:column;gap:14px;min-width:0}
+.steps fieldset{border:0;border-top:1px solid var(--line);margin:0;padding:10px 0 0;display:flex;flex-direction:column;gap:8px;min-width:0}
+.steps legend{font-family:var(--display);font-weight:600;font-size:16px;letter-spacing:.03em;padding:0 8px 0 0}
+.steps label{display:flex;flex-wrap:wrap;align-items:center;gap:8px;font-size:15px}
+.steps .row{display:flex;flex-wrap:wrap;gap:8px 14px;align-items:center}
+.steps output{font-variant-numeric:tabular-nums;font-weight:600;min-width:3ch}
+#istat{font-weight:600;color:var(--fg)}
+</style>
+<div class="wrap home">
+<section id="home" aria-labelledby="hh">
+  <header>
+    <h1 id="hh">Planner piante 3D</h1>
+    <p class="sub">Da una planimetria a un modello 3D da correggere, misurare e arredare. Scegli da dove partire.</p>
+  </header>
+  <div class="hcards">
+    <div class="hcard"><h2>Nuova pianta</h2><p>Importa una foto, una scansione, un PDF o un DXF: muri, porte e finestre vengono riconosciuti in automatico e poi li correggi tu.</p><button id="himp" class="primary" type="button">Importa una pianta…</button></div>
+    <div class="hcard"><h2>Progetto salvato</h2><p>Riapri un file di progetto salvato da questa pagina, oppure incollane il testo.</p><div class="controls"><button id="hopen" type="button">Apri un file…</button><button id="hpaste" type="button">Incolla il testo…</button></div></div>
+    <div class="hcard"><h2>Progetto di esempio</h2><p>Un appartamento inventato di circa 70 m², già diviso in stanze, per provare strumenti e mobili.</p><button id="hex" type="button">Apri l'esempio</button></div>
+  </div>
+  <div id="hpbox" hidden><textarea id="hptxt" aria-label="Testo del progetto salvato" spellcheck="false" placeholder="Incolla qui il testo del progetto"></textarea><div class="controls"><button id="hpok" class="primary" type="button">Apri</button><button id="hpno" type="button">Annulla</button></div></div>
+  <span id="hmsg" class="msg" role="status"></span>
+  <div id="hlistbox" hidden><h2>Progetti in questo browser</h2><div id="hlist" class="controls"></div></div>
+</section>
+<header>
+  <span class="eyebrow" id="peyebrow">Planner piante 3D · progetto di esempio</span>
+  <h1 id="ptitle">Appartamento di esempio</h1>
+  <p class="sub">Plastico 3D della pianta. I muri sono sezionati per vedere l'interno: il cursore sotto la vista li porta all'altezza piena. Trascina per ruotare, usa la rotella o due dita per avvicinarti. Muri, misure e mobili si gestiscono dal pannello a fianco.</p>
+</header>
+<div class="controls proj">
+  <button id="phome" type="button">← Inizio</button>
+  <label for="psel">Progetto <select id="psel"></select></label>
+  <button id="pimp" type="button">Importa pianta…</button>
+  <button id="pren" type="button">Rinomina</button>
+  <button id="pdel" type="button">Elimina</button>
+  <button id="psave" type="button">Salva progetto</button>
+  <button id="pdxf" type="button">Esporta DXF</button>
+  <button id="popen" type="button">Apri progetto salvato…</button>
+  <button id="ppaste" type="button">Incolla progetto…</button>
+  <input id="pfile" type="file" accept=".json,application/json" hidden aria-label="File di progetto salvato">
+  <form id="prenf" class="controls" hidden>
+    <label for="prenn">Nuovo nome <input id="prenn" type="text" maxlength="40"></label>
+    <button type="submit">Salva nome</button>
+  </form>
+  <span id="pmsg" class="msg" role="status"></span>
+  <div id="fb" hidden><span id="fbmsg" class="msg" role="status"></span><textarea id="fbtxt" aria-label="Testo del progetto" spellcheck="false"></textarea><img id="fbimg" alt="Vista esportata" hidden><div class="controls"><button id="fbcopy" type="button">Copia il testo</button><button id="fbopen" type="button" hidden>Apri</button><button id="fbclose" type="button">Chiudi</button></div></div>
+</div>
+<section class="imp" id="imp" aria-labelledby="ih" hidden>
+  <h2 id="ih">Importa una pianta da immagine, PDF o DXF</h2>
+  <div class="impgrid">
+    <div class="pvbox"><canvas id="ipv" width="10" height="10" hidden aria-label="Anteprima della pianta con i muri riconosciuti in rosso"></canvas><div class="empty" id="iempty">Scegli una foto, una scansione, un PDF o un DXF della pianta: qui compare l'anteprima con i muri riconosciuti in rosso, le porte in verde, le finestre in blu e le scritte escluse in giallo.</div></div>
+    <div class="steps">
+      <fieldset><legend>1 · File</legend>
+        <input id="ifile" type="file" accept="image/*,application/pdf,.pdf,.dxf" aria-label="File della pianta: immagine, PDF o DXF">
+        <label for="ipage" id="ipagel" hidden>Pagina del PDF <input id="ipage" type="number" min="1" max="1" step="1" value="1"></label>
+        <label for="iname">Nome del progetto <input id="iname" type="text" maxlength="40" value="Nuova pianta"></label>
+      </fieldset>
+      <fieldset><legend>2 · Muri</legend>
+        <label for="imode">Nel disegno i muri sono <select id="imode"><option value="fill">pieni (linee spesse o scure)</option><option value="hollow">a doppia linea (vuoti dentro)</option></select></label>
+        <label for="ithr">Soglia del nero <input id="ithr" type="range" min="40" max="220" step="1" value="125"> <output id="ithro" for="ithr">125</output></label>
+        <label for="ithk"><span id="ithkl">Spessore minimo</span> <input id="ithk" type="range" min="2" max="40" step="1" value="5"> <output id="ithko" for="ithk">5 px</output></label>
+        <label for="itext"><input id="itext" type="checkbox" checked> Riconosci ed escludi le scritte</label>
+        <p>Tipo di muri e cursori partono da valori scelti in automatico: regolali finché il rosso copre i muri. Le aperture trovate nei muri sono in verde (porte) e in blu (finestre). Quello che resta sbagliato lo correggi dopo, sul modello.</p>
+      </fieldset>
+      <fieldset><legend>3 · Scala</legend>
+        <label for="iscf" id="iscfl" hidden><input id="iscf" type="radio" name="isc" value="f"> Misure del file DXF</label>
+        <div class="row" id="iscfrow" hidden><label for="iunit">Il disegno è in <select id="iunit"><option value="m">metri</option><option value="cm">centimetri</option><option value="mm">millimetri</option></select></label></div>
+        <label for="iscm"><input id="iscm" type="radio" name="isc" value="m" checked> Misura nota</label>
+        <div class="row" id="iscmrow"><span>Trascina sull'anteprima lungo un tratto che conosci, poi scrivi quanto è lungo:</span><label for="ilen"><input id="ilen" type="number" min="1" max="10000" step="1" placeholder="cm"> cm</label></div>
+        <label for="iscd"><input id="iscd" type="radio" name="isc" value="d"> Scala dichiarata</label>
+        <div class="row" id="iscdrow" hidden><label for="iscale">1 : <input id="iscale" type="number" min="1" max="5000" step="1" value="100"></label><label for="idpi">a <input id="idpi" type="number" min="30" max="1200" step="1" value="150"> dpi di scansione</label></div>
+        <label for="iht">Altezza del soffitto <input id="iht" type="number" min="200" max="500" step="1" value="270"> cm</label>
+      </fieldset>
+      <p id="istat" role="status">Nessuna immagine caricata.</p>
+      <div class="row"><button id="iok" type="button" class="primary" disabled>Crea progetto</button><button id="icancel" type="button">Annulla</button></div>
+    </div>
+  </div>
+</section>
+<div class="work">
+<div class="view">
+<div class="stage" id="stage">
+  <canvas id="gl" tabindex="0" aria-label="Modello 3D della pianta. Frecce per ruotare, più e meno per lo zoom."></canvas>
+  <svg class="ov" id="ov" aria-hidden="true"></svg>
+  <div class="hint" id="hint">Trascina: ruota · Maiusc + trascina: sposta la vista · Rotella: zoom · Trascina un mobile: lo sposti</div>
+</div>
+<div class="controls">
+  <label for="hcut">Altezza muri <input id="hcut" type="range" min="0.3" max="2.7" step="0.1" value="1.6"> <output id="hout" for="hcut">1,6 m</output></label>
+  <label for="labels" id="labelsl"><input id="labels" type="checkbox" checked> Nomi dei vani</label>
+  <label for="glass" id="glassl"><input id="glass" type="checkbox" checked> Vetri e architravi</label>
+  <label for="modon"><input id="modon" type="checkbox" checked> Muri e aperture</label>
+  <label for="bgon" id="bgonl" hidden><input id="bgon" type="checkbox" checked> Pianta di sfondo</label>
+  <button id="v3d" type="button">Vista 3D</button>
+  <button id="vtop" type="button">Vista dall'alto</button>
+  <button id="png" type="button">Esporta PNG</button>
+  <span id="pngmsg" class="msg" role="status"></span>
+</div>
+</div>
+<section class="furn" aria-labelledby="mh">
+  <h2 id="mh">Muri e misure</h2>
+  <div class="tools" role="group" aria-label="Strumento">
+    <button id="t-mob" type="button" aria-pressed="true">Naviga e arreda</button>
+    <button id="t-add" type="button" aria-pressed="false">Aggiungi muro</button>
+    <button id="t-cut" type="button" aria-pressed="false">Demolisci</button>
+    <button id="t-ope" type="button" aria-pressed="false">Porte e finestre</button>
+    <button id="t-mea" type="button" aria-pressed="false">Misura</button>
+  </div>
+  <p id="toolhint">Scegli uno strumento per modificare i muri o prendere una misura direttamente sulla pianta.</p>
+  <div class="controls">
+    <label for="wth">Spessore <input id="wth" type="number" min="5" max="60" step="1" value="10"> cm</label>
+    <button id="wundo" type="button" disabled>Annulla ultima</button>
+    <button id="wreset" type="button" disabled>Ripristina muri</button>
+    <button id="mclear" type="button" disabled>Cancella misure</button>
+  </div>
+  <hr>
+  <h2 id="fh">Mobili</h2>
+  <p>Scegli un mobile: compare al centro della vista. Trascinalo sul pavimento per spostarlo, a scatti di 5 cm. Misure in cm; la disposizione resta salvata in questo browser.</p>
+  <div class="presets" id="presets"></div>
+  <form class="controls" id="custom">
+    <label for="cn">Su misura <input id="cn" type="text" value="Mobile" maxlength="24" aria-label="Nome del mobile"></label>
+    <label for="cw">L <input id="cw" type="number" min="10" max="600" step="1" value="100"></label>
+    <label for="cd">P <input id="cd" type="number" min="10" max="600" step="1" value="50"></label>
+    <label for="ch">H <input id="ch" type="number" min="5" max="300" step="1" value="80"></label>
+    <button type="submit">Aggiungi</button>
+  </form>
+  <div class="controls">
+    <span id="selname">Nessun mobile selezionato</span>
+    <button id="rot" type="button" disabled>Ruota 90°</button>
+    <button id="dup" type="button" disabled>Duplica</button>
+    <button id="del" type="button" disabled>Elimina</button>
+    <button id="clear" type="button" disabled>Togli tutti</button>
+  </div>
+  <ul class="flist" id="flist" aria-label="Mobili inseriti"></ul>
+</section>
+</div>
+<div class="cols">
+  <div><h2 id="tabh">Superfici indicative</h2><table id="tab"></table><p class="note" id="areanote" hidden>I muri sono stati modificati dopo il calcolo di queste superfici: premi "Ricalcola le stanze" per aggiornarle.</p>
+    <div class="controls roomctl"><button id="rcalc" type="button">Ricalcola le stanze</button><button id="rreset" type="button" hidden>Torna alle stanze di partenza</button><span id="rmsg" class="msg" role="status"></span></div></div>
+  <div><h2>Cosa è misurato e cosa è ipotizzato</h2><ul id="notes"></ul></div>
+</div>
+</div>
+<script>const GEO0={"walls":[[0.4,0.4,1.8,0.7],[3.2,0.4,5.0,0.7],[5.7,0.4,7.6,0.7],[9.0,0.4,10.4,0.7],[0.4,8.1,2.0,8.4],[3.8,8.1,7.4,8.4],[8.8,8.1,10.4,8.4],[0.4,0.4,0.7,6.2],[0.4,7.4,0.7,8.4],[10.1,0.4,10.4,4.25],[10.1,5.15,10.4,8.4],[0.7,4.0,3.1,4.1],[3.9,4.0,4.9,4.1],[5.6,4.0,6.9,4.1],[7.7,4.0,10.1,4.1],[0.7,5.3,2.4,5.4],[4.0,5.3,6.7,5.4],[7.5,5.3,10.1,5.4],[4.2,0.7,4.3,4.0],[6.4,0.7,6.5,4.0],[5.9,5.4,6.0,8.1]],"ops":[[1.8,0.4,3.2,0.7,"win"],[5.0,0.4,5.7,0.7,"win"],[7.6,0.4,9.0,0.7,"win"],[3.1,4.0,3.9,4.1,"door"],[4.9,4.0,5.6,4.1,"door"],[6.9,4.0,7.7,4.1,"door"],[10.1,4.25,10.4,5.15,"door"],[2.4,5.3,4.0,5.4,"gap"],[6.7,5.3,7.5,5.4,"door"],[2.0,8.1,3.8,8.4,"pf"],[7.4,8.1,8.8,8.4,"win"],[0.4,6.2,0.7,7.4,"win"]],"rooms":[{"name":"Camera 1","area":11.6,"rects":[[0.7,0.7,4.2,4.0]],"c":[2.45,2.35]},{"name":"Bagno","area":6.9,"rects":[[4.3,0.7,6.4,4.0]],"c":[5.35,2.35]},{"name":"Camera 2","area":11.9,"rects":[[6.5,0.7,10.1,4.0]],"c":[8.3,2.35]},{"name":"Ingresso","area":11.3,"rects":[[0.7,4.1,10.1,5.3]],"c":[5.4,4.7]},{"name":"Soggiorno","area":14.0,"rects":[[0.7,5.4,5.9,8.1]],"c":[3.3,6.75]},{"name":"Cucina","area":11.1,"rects":[[6.0,5.4,10.1,8.1]],"c":[8.05,6.75]},{"name":"Balcone","area":6.8,"rects":[[0.7,8.4,5.9,9.7]],"c":[3.3,9.05]}],"parapets":[[0.7,8.4,0.78,9.7],[0.7,9.62,5.9,9.7],[5.82,8.4,5.9,9.7]],"treads":[],"lift":[]};</script>
+<script>
+(function(){
+const $=id=>document.getElementById(id),cm=v=>Math.round(v*100),num=(v,d)=>v.toFixed(d==null?1:d).replace('.',',');
+const ROOMCOL={'Soggiorno':[0.88,0.78,0.56],'Cucina':[0.86,0.70,0.52],'Camera 1':[0.71,0.80,0.61],'Camera 2':[0.64,0.77,0.68],'Bagno':[0.60,0.76,0.83],'Ingresso':[0.79,0.71,0.62],'Balcone':[0.70,0.72,0.75]};
+const WALL=[0.93,0.92,0.89], CUT=[0.30,0.35,0.41], TREAD=[0.35,0.38,0.42], THR=[0.74,0.74,0.72], SLAB=[0.86,0.85,0.82];
+const canvas=$('gl'), stage=$('stage'), wrapEl=document.querySelector('.wrap');
+const gl=canvas.getContext('webgl',{antialias:true});
+if(!gl){const d=document.createElement('div');d.className='err';d.textContent='Questo browser non riesce a mostrare il modello 3D (WebGL non disponibile).';stage.appendChild(d);return;}
+
+// ---------- archivio dei progetti (nel browser)
+const LS={get(k){try{return localStorage.getItem(k);}catch(e){return null;}},set(k,v){try{localStorage.setItem(k,v);return true;}catch(e){return false;}},del(k){try{localStorage.removeItem(k);}catch(e){}}};
+GEO0.ext=[10.8,10.1];
+const BUILTIN={id:'esempio',name:'Appartamento di esempio',builtin:true,ht:2.7,geo:GEO0,img:null};
+const mem={};let index=[];const TYPES=['door','win','pf','gap','none'],TNAME={door:'porta',win:'finestra',pf:'portafinestra',gap:'varco aperto',none:'muro pieno'},TCOL={door:[0.15,0.62,0.30],win:[0.15,0.42,0.85],pf:[0.10,0.70,0.80],gap:[0.90,0.68,0.10],none:[0.85,0.20,0.15]};
+try{const v=JSON.parse(LS.get('pl-index')||'[]');if(Array.isArray(v))index=v.filter(p=>p&&typeof p.id==='string'&&/^p[a-z0-9]+$/.test(p.id)&&typeof p.name==='string');}catch(e){}
+function saveIndex(){LS.set('pl-index',JSON.stringify(index));}
+function getProject(id){
+  if(id===BUILTIN.id)return BUILTIN;const meta=index.find(p=>p.id===id);if(!meta)return null;
+  let g=mem[id];if(!g){try{g=JSON.parse(LS.get('pl-'+id+'-geo')||'null');}catch(e){g=null;}}
+  if(!g||!Array.isArray(g.walls)||!(g.w>0)||!(g.d>0))return null;
+  const walls=g.walls.filter(r=>Array.isArray(r)&&r.length>=4&&r.slice(0,4).every(isFinite));
+  return {id:id,name:meta.name,builtin:false,ht:(g.ht>=2&&g.ht<=5)?g.ht:2.7,img:typeof g.img==='string'&&g.img.indexOf('data:image/')===0?g.img:null,
+    geo:{walls:walls,rooms:(Array.isArray(g.rooms)?g.rooms:[]).filter(isRoom),ops:(Array.isArray(g.ops)?g.ops:[]).filter(o=>Array.isArray(o)&&o.length===5&&o.slice(0,4).every(isFinite)&&TYPES.indexOf(o[4])>=0&&o[4]!=='none'),parapets:(Array.isArray(g.parapets)?g.parapets:[]).filter(isRect),treads:(Array.isArray(g.treads)?g.treads:[]).filter(isRect),lift:[],ext:[g.w,g.d]}};
+}
+let P=BUILTIN,GEO=GEO0,HT=2.7;
+
+// ---------- WebGL
+function sh(t,s){const o=gl.createShader(t);gl.shaderSource(o,s);gl.compileShader(o);return o;}
+function prog(v,f){const p=gl.createProgram();gl.attachShader(p,sh(gl.VERTEX_SHADER,v));gl.attachShader(p,sh(gl.FRAGMENT_SHADER,f));gl.linkProgram(p);return p;}
+const pr=prog('attribute vec3 p;attribute vec3 n;attribute vec4 c;uniform mat4 m;varying vec4 v;void main(){vec3 L=normalize(vec3(0.45,0.8,0.35));float d=0.58+0.42*max(dot(n,L),0.0);if(n.y<-0.5)d=0.5;v=vec4(c.rgb*d,c.a);gl_Position=m*vec4(p,1.0);}',
+  'precision mediump float;varying vec4 v;void main(){gl_FragColor=v;}');
+const aP=gl.getAttribLocation(pr,'p'),aN=gl.getAttribLocation(pr,'n'),aC=gl.getAttribLocation(pr,'c'),uM=gl.getUniformLocation(pr,'m');
+const pt=prog('attribute vec3 p;attribute vec2 t;uniform mat4 m;varying vec2 v;void main(){v=t;gl_Position=m*vec4(p,1.0);}',
+  'precision mediump float;varying vec2 v;uniform sampler2D s;void main(){vec4 c=texture2D(s,v);gl_FragColor=vec4(c.rgb,1.0);}');
+const tP=gl.getAttribLocation(pt,'p'),tT=gl.getAttribLocation(pt,'t'),tM=gl.getUniformLocation(pt,'m'),tS=gl.getUniformLocation(pt,'s');
+const bufO=gl.createBuffer(),bufT=gl.createBuffer(),bufQ=gl.createBuffer();let nO=0,nT=0,tex=null,texReady=false,showBg=true;
+function box(a,x0,z0,x1,z1,y0,y1,col,top,al){
+  if(y1<=y0)return; al=al==null?1:al; top=top||col;
+  const F=[[[x0,y1,z0],[x0,y1,z1],[x1,y1,z1],[x1,y1,z0],[0,1,0],top],[[x0,y0,z0],[x1,y0,z0],[x1,y0,z1],[x0,y0,z1],[0,-1,0],col],
+   [[x0,y0,z1],[x1,y0,z1],[x1,y1,z1],[x0,y1,z1],[0,0,1],col],[[x0,y0,z0],[x0,y1,z0],[x1,y1,z0],[x1,y0,z0],[0,0,-1],col],
+   [[x1,y0,z0],[x1,y1,z0],[x1,y1,z1],[x1,y0,z1],[1,0,0],col],[[x0,y0,z0],[x0,y0,z1],[x0,y1,z1],[x0,y1,z0],[-1,0,0],col]];
+  for(const f of F){for(const i of [0,1,2,0,2,3]){const q=f[i];a.push(q[0],q[1],q[2],f[4][0],f[4][1],f[4][2],f[5][0],f[5][1],f[5][2],al);}}
+}
+let hcut=1.6, showGlass=true;
+const PRE=[['Letto matrimoniale',160,200,45,[0.86,0.84,0.80]],['Letto singolo',90,200,45,[0.86,0.84,0.80]],['Comodino',45,40,50,[0.72,0.56,0.38]],['Armadio',200,60,236,[0.80,0.74,0.64]],
+ ['Divano 3 posti',220,95,80,[0.45,0.52,0.60]],['Poltrona',80,85,80,[0.45,0.52,0.60]],['Mobile TV',180,40,50,[0.72,0.56,0.38]],['Libreria',80,28,202,[0.80,0.74,0.64]],
+ ['Tavolo',160,90,75,[0.72,0.56,0.38]],['Sedia',45,50,85,[0.55,0.42,0.30]],['Scrivania',120,60,75,[0.72,0.56,0.38]],
+ ['Cucina lineare',240,60,90,[0.66,0.68,0.70]],['Frigorifero',60,65,185,[0.78,0.80,0.82]],['Lavatrice',60,60,85,[0.78,0.80,0.82]]];
+
+// ---------- stato del progetto corrente
+let ops=[],apo={},userRooms=null,showModel=true,curWalls=[],curOps=[],clickOps=[],tool='mob',wdraw=null,meas=[],measPos=[],items=[],selId=null,nextId=1;
+const wkey=()=>P.id+'-muri',ikey=()=>P.id+'-mobili',akey=()=>P.id+'-aperture',rkey=()=>P.id+'-vani';
+const RPAL=[[0.88,0.78,0.56],[0.71,0.80,0.61],[0.60,0.76,0.83],[0.86,0.70,0.52],[0.77,0.70,0.81],[0.64,0.77,0.68],[0.79,0.71,0.62],[0.55,0.70,0.80],[0.85,0.74,0.74],[0.72,0.72,0.74]];
+const isRect=r=>Array.isArray(r)&&r.length>=4&&r.slice(0,4).every(v=>typeof v==='number'&&isFinite(v));
+const isRoom=r=>r&&typeof r.name==='string'&&typeof r.area==='number'&&isFinite(r.area)&&Array.isArray(r.c)&&r.c.length===2&&r.c.every(isFinite)&&Array.isArray(r.rects)&&r.rects.every(isRect)&&(r.col==null||(Array.isArray(r.col)&&r.col.length===3&&r.col.every(isFinite)));
+const roomsNow=()=>userRooms?userRooms.list:GEO.rooms,roomCol=r=>r.col||ROOMCOL[r.name]||SLAB,areasStale=()=>userRooms?!!userRooms.stale:(ops.length>0||Object.keys(apo).length>0);
+function saveR(){if(userRooms)LS.set(rkey(),JSON.stringify(userRooms));else LS.del(rkey());}
+function touchRooms(){if(userRooms&&!userRooms.stale){userRooms.stale=true;saveR();}}
+function saveA(){LS.set(akey(),JSON.stringify(apo));touchRooms();}
+function saveW(){LS.set(wkey(),JSON.stringify(ops));touchRooms();}
+function save(){LS.set(ikey(),JSON.stringify(items.map(f=>({name:f.name,w:f.w,d:f.d,h:f.h,x:f.x,z:f.z,col:f.col}))));}
+function loadState(){
+  ops=[];items=[];apo={};userRooms=null;
+  try{const sv=JSON.parse(LS.get(rkey())||'null');if(sv&&Array.isArray(sv.list)&&sv.list.every(isRoom))userRooms={list:sv.list.map(r=>Object.assign({},r,{name:r.name.slice(0,40)})),stale:!!sv.stale};}catch(e){}
+  try{const sv=JSON.parse(LS.get(akey())||'null');if(sv&&typeof sv==='object'&&!Array.isArray(sv))for(const k of Object.keys(sv))if(/^\d+$/.test(k)&&TYPES.indexOf(sv[k])>=0)apo[k]=sv[k];}catch(e){}
+  try{const sv=JSON.parse(LS.get(wkey())||'null');if(Array.isArray(sv))ops=sv.filter(o=>o&&(o.t==='add'||o.t==='cut')&&Array.isArray(o.r)&&o.r.length===4&&o.r.every(isFinite));}catch(e){}
+  try{const sv=JSON.parse(LS.get(ikey())||'null');if(Array.isArray(sv))items=sv.filter(f=>f&&isFinite(f.x)&&isFinite(f.z)&&f.w>0&&f.d>0&&f.h>0&&Array.isArray(f.col));}catch(e){}
+  items.forEach(f=>{f.id=nextId++;});selId=null;meas=[];wdraw=null;tool='mob';
+}
+function sub(r,c){if(c[0]>=r[2]||c[2]<=r[0]||c[1]>=r[3]||c[3]<=r[1])return [r];const o=[],z0=Math.max(r[1],c[1]),z1=Math.min(r[3],c[3]);
+  if(c[1]>r[1])o.push([r[0],r[1],r[2],c[1]]);if(c[3]<r[3])o.push([r[0],c[3],r[2],r[3]]);if(c[0]>r[0])o.push([r[0],z0,c[0],z1]);if(c[2]<r[2])o.push([c[2],z0,r[2],z1]);
+  return o.filter(q=>q[2]-q[0]>0.004&&q[3]-q[1]>0.004);}
+function recompute(){const eff=GEO.ops.map((o,i)=>apo[i]?[o[0],o[1],o[2],o[3],apo[i]]:o);
+  let ws=GEO.walls.map(q=>({r:q.slice(0,4),h:HT})).concat(GEO.parapets.map(q=>({r:q.slice(0,4),h:1.0})));const dead=new Set();
+  for(const o of eff)if(o[4]==='none')ws.push({r:o.slice(0,4),h:HT});
+  for(const op of ops){if(op.t==='add')ws.push({r:op.r,h:HT});else{const c=op.r,n=[];for(const w of ws)for(const r of sub(w.r,c))n.push({r:r,h:w.h});ws=n;
+    eff.forEach((o,i)=>{const mx=(o[0]+o[2])/2,mz=(o[1]+o[3])/2;if(mx>c[0]&&mx<c[2]&&mz>c[1]&&mz<c[3])dead.add(i);});}}
+  curWalls=ws;curOps=eff.filter((o,i)=>!dead.has(i)&&o[4]!=='none');clickOps=eff.map((o,i)=>({o:o,i:i})).filter(q=>!dead.has(q.i));}
+function drawRect(){if(!wdraw)return null;const a=wdraw.a,b=wdraw.b;
+  if(tool==='cut')return [Math.min(a[0],b[0]),Math.min(a[1],b[1]),Math.max(a[0],b[0]),Math.max(a[1],b[1])];
+  const th=wdraw.th/2;if(Math.abs(b[0]-a[0])>=Math.abs(b[1]-a[1]))return [Math.min(a[0],b[0]),a[1]-th,Math.max(a[0],b[0]),a[1]+th];
+  return [a[0]-th,Math.min(a[1],b[1]),a[0]+th,Math.max(a[1],b[1])];}
+function build(){
+  const O=[],T=[],h=hcut,top=h<HT-0.01?CUT:WALL;
+  if(P.builtin){
+    for(const r of GEO.rooms){const c=userRooms?SLAB:roomCol(r);for(const q of r.rects)box(O,q[0],q[1],q[2],q[3],-0.12,0,c);}
+    for(const q of GEO.ops)box(O,q[0],q[1],q[2],q[3],-0.12,0,THR);
+    for(const q of GEO.walls.concat(GEO.parapets))box(O,q[0],q[1],q[2],q[3],-0.12,0,THR);
+  }else box(O,0,0,GEO.ext[0],GEO.ext[1],-0.12,0,SLAB);
+  if(userRooms||!P.builtin)for(const r of roomsNow()){const c=roomCol(r);for(const q of r.rects)box(O,q[0],q[1],q[2],q[3],0,0.006,c);}
+  if(showModel)for(const w of curWalls)box(O,w.r[0],w.r[1],w.r[2],w.r[3],0,Math.min(w.h,h),WALL,h<w.h-0.01?CUT:WALL);
+  const prv=tool==='mea'?null:drawRect();if(prv&&prv[2]-prv[0]>0.01&&prv[3]-prv[1]>0.01){if(tool==='cut')box(T,prv[0],prv[1],prv[2],prv[3],0,Math.min(HT,h)+0.03,[0.85,0.2,0.15],null,0.4);else box(T,prv[0],prv[1],prv[2],prv[3],0,Math.min(HT,h)+0.02,[0.1,0.55,0.5],null,0.6);}
+  if(tool==='ope')for(const q of clickOps){const o=q.o;box(T,o[0]-0.03,o[1]-0.03,o[2]+0.03,o[3]+0.03,0,Math.min(HT,h)+0.05,TCOL[o[4]],null,0.5);}
+  for(const q of GEO.treads.concat(GEO.lift)){ if(Math.abs(q[0]-q[2])>1e-6&&Math.abs(q[1]-q[3])>1e-6)continue;
+    box(O,Math.min(q[0],q[2])-0.015,Math.min(q[1],q[3])-0.015,Math.max(q[0],q[2])+0.015,Math.max(q[1],q[3])+0.015,0,0.012,TREAD);}
+  if(showGlass&&showModel)for(const q of curOps){const t=q[4],x0=q[0],z0=q[1],x1=q[2],z1=q[3];if(t==='gap')continue;
+    const lin=t==='door'?2.1:2.4; if(h>lin)box(O,x0,z0,x1,z1,lin,Math.min(HT,h),WALL,top);
+    if(t==='win')box(O,x0,z0,x1,z1,0,Math.min(0.9,h),WALL,h<0.9?CUT:WALL);
+    if(t!=='door'){const g0=t==='win'?0.9:0.02,g1=Math.min(2.4,h);
+      if(x1-x0<z1-z0){const m=(x0+x1)/2;box(T,m-0.02,z0,m+0.02,z1,g0,g1,[0.55,0.78,0.9],null,0.38);}
+      else{const m=(z0+z1)/2;box(T,x0,m-0.02,x1,m+0.02,g0,g1,[0.55,0.78,0.9],null,0.38);}}}
+  for(const f of items){const sl=f.id===selId;box(O,f.x-f.w/2,f.z-f.d/2,f.x+f.w/2,f.z+f.d/2,0.02,f.h,f.col,sl?[0.96,0.60,0.20]:f.col.map(v=>Math.min(1,v*1.12)));}
+  gl.bindBuffer(gl.ARRAY_BUFFER,bufO);gl.bufferData(gl.ARRAY_BUFFER,new Float32Array(O),gl.STATIC_DRAW);nO=O.length/10;
+  gl.bindBuffer(gl.ARRAY_BUFFER,bufT);gl.bufferData(gl.ARRAY_BUFFER,new Float32Array(T),gl.STATIC_DRAW);nT=T.length/10;
+}
+// matrici (column-major)
+function mul(a,b){const o=new Float32Array(16);for(let c=0;c<4;c++)for(let r=0;r<4;r++){let s=0;for(let k=0;k<4;k++)s+=a[k*4+r]*b[c*4+k];o[c*4+r]=s;}return o;}
+function persp(f,as,n,fa){const t=1/Math.tan(f/2),o=new Float32Array(16);o[0]=t/as;o[5]=t;o[10]=(fa+n)/(n-fa);o[11]=-1;o[14]=2*fa*n/(n-fa);return o;}
+function look(e,t){let z=[e[0]-t[0],e[1]-t[1],e[2]-t[2]];let l=Math.hypot(z[0],z[1],z[2]);z=z.map(v=>v/l);
+  let x=[z[2],0,-z[0]];l=Math.hypot(x[0],x[2]);x=x.map(v=>v/l);const y=[z[1]*x[2]-z[2]*x[1],z[2]*x[0]-z[0]*x[2],z[0]*x[1]-z[1]*x[0]];
+  const o=new Float32Array(16);o[0]=x[0];o[4]=x[1];o[8]=x[2];o[12]=-(x[0]*e[0]+x[1]*e[1]+x[2]*e[2]);o[1]=y[0];o[5]=y[1];o[9]=y[2];o[13]=-(y[0]*e[0]+y[1]*e[1]+y[2]*e[2]);
+  o[2]=z[0];o[6]=z[1];o[10]=z[2];o[14]=-(z[0]*e[0]+z[1]*e[1]+z[2]*e[2]);o[15]=1;return o;}
+let HOME={yaw:0.5,pitch:1.02,dist:20.5,tx:7.0,tz:6.0};
+const cam=Object.assign({},HOME); let M=null,W=1,H=1,dirty=true,forceDpr=0;const labPos=[];let labs=[];
+let showLabs=true;
+const selLab=document.createElement('div');selLab.className='lab';selLab.hidden=true;stage.appendChild(selLab);
+function eye(){const t=[cam.tx,0.8,cam.tz],cp=Math.cos(cam.pitch),dd=cam.dist*Math.max(1,1.45/(W/H));
+  return {t:t,e:[t[0]+dd*cp*Math.sin(cam.yaw),t[1]+dd*Math.sin(cam.pitch),t[2]+dd*cp*Math.cos(cam.yaw)]};}
+function ray(ev){const r=canvas.getBoundingClientRect(),nx=(ev.clientX-r.left)/r.width*2-1,ny=1-(ev.clientY-r.top)/r.height*2,c=eye(),e=c.e,t=c.t;
+  let z=[e[0]-t[0],e[1]-t[1],e[2]-t[2]],l=Math.hypot(z[0],z[1],z[2]);z=z.map(v=>v/l);let x=[z[2],0,-z[0]];l=Math.hypot(x[0],x[2]);x=x.map(v=>v/l);
+  const y=[z[1]*x[2]-z[2]*x[1],z[2]*x[0]-z[0]*x[2],z[0]*x[1]-z[1]*x[0]],th=Math.tan(0.31),a=nx*th*(r.width/r.height),b=ny*th;
+  return {o:e,d:[-z[0]+x[0]*a+y[0]*b,-z[1]+x[1]*a+y[1]*b,-z[2]+x[2]*a+y[2]*b]};}
+function ground(ev){const q=ray(ev);if(q.d[1]>-1e-4)return null;const k=-q.o[1]/q.d[1];return [q.o[0]+q.d[0]*k,q.o[2]+q.d[2]*k];}
+function pick(ev){const q=ray(ev);let best=null,bt=1e9;for(const f of items){const lo=[f.x-f.w/2,0,f.z-f.d/2],hi=[f.x+f.w/2,f.h,f.z+f.d/2];let t0=0,t1=1e9,ok=true;
+    for(let i=0;i<3;i++){if(Math.abs(q.d[i])<1e-9){if(q.o[i]<lo[i]||q.o[i]>hi[i]){ok=false;break;}}else{let a=(lo[i]-q.o[i])/q.d[i],b=(hi[i]-q.o[i])/q.d[i];if(a>b){const s=a;a=b;b=s;}t0=Math.max(t0,a);t1=Math.min(t1,b);if(t0>t1){ok=false;break;}}}
+    if(ok&&t0<bt){bt=t0;best=f;}}return best;}
+function sceneColor(){const s=getComputedStyle(document.documentElement).getPropertyValue('--scene').trim();const m=/^#([0-9a-f]{6})$/i.exec(s);if(!m)return [0.87,0.9,0.92];const n=parseInt(m[1],16);return [(n>>16)/255,((n>>8)&255)/255,(n&255)/255];}
+function draw(){
+  dirty=false;
+  const r=stage.getBoundingClientRect(),dpr=forceDpr||Math.min(window.devicePixelRatio||1,2);W=Math.max(1,r.width);H=Math.max(1,r.height);
+  const cw=Math.round(W*dpr),ch=Math.round(H*dpr);if(canvas.width!==cw||canvas.height!==ch){canvas.width=cw;canvas.height=ch;}
+  gl.viewport(0,0,cw,ch);const bg=sceneColor();gl.clearColor(bg[0],bg[1],bg[2],1);gl.clear(gl.COLOR_BUFFER_BIT|gl.DEPTH_BUFFER_BIT);gl.enable(gl.DEPTH_TEST);
+  const ce=eye(),t=ce.t,e=ce.e;
+  M=mul(persp(0.62,W/H,0.3,Math.max(120,cam.dist*3)),look(e,t));
+  gl.useProgram(pr);gl.uniformMatrix4fv(uM,false,M);
+  function bind(b){gl.bindBuffer(gl.ARRAY_BUFFER,b);gl.enableVertexAttribArray(aP);gl.enableVertexAttribArray(aN);gl.enableVertexAttribArray(aC);
+    gl.vertexAttribPointer(aP,3,gl.FLOAT,false,40,0);gl.vertexAttribPointer(aN,3,gl.FLOAT,false,40,12);gl.vertexAttribPointer(aC,4,gl.FLOAT,false,40,24);}
+  gl.disable(gl.BLEND);gl.depthMask(true);bind(bufO);gl.drawArrays(gl.TRIANGLES,0,nO);
+  if(tex&&texReady&&showBg&&!P.builtin){
+    gl.disableVertexAttribArray(aP);gl.disableVertexAttribArray(aN);gl.disableVertexAttribArray(aC);
+    gl.useProgram(pt);gl.uniformMatrix4fv(tM,false,M);gl.activeTexture(gl.TEXTURE0);gl.bindTexture(gl.TEXTURE_2D,tex);gl.uniform1i(tS,0);
+    gl.bindBuffer(gl.ARRAY_BUFFER,bufQ);gl.enableVertexAttribArray(tP);gl.enableVertexAttribArray(tT);
+    gl.vertexAttribPointer(tP,3,gl.FLOAT,false,20,0);gl.vertexAttribPointer(tT,2,gl.FLOAT,false,20,12);gl.drawArrays(gl.TRIANGLES,0,6);
+    gl.disableVertexAttribArray(tP);gl.disableVertexAttribArray(tT);gl.useProgram(pr);
+  }
+  if(nT){gl.enable(gl.BLEND);gl.blendFunc(gl.SRC_ALPHA,gl.ONE_MINUS_SRC_ALPHA);gl.depthMask(false);bind(bufT);gl.drawArrays(gl.TRIANGLES,0,nT);gl.depthMask(true);}
+  roomsNow().forEach((rm,i)=>{const d=labs[i];if(!d)return;const x=rm.c[0],y=0.05,z=rm.c[1];
+    const cx=M[0]*x+M[4]*y+M[8]*z+M[12],cy=M[1]*x+M[5]*y+M[9]*z+M[13],w=M[3]*x+M[7]*y+M[11]*z+M[15];
+    if(!showLabs||w<=0.1){d.hidden=true;labPos[i]=null;return;}d.hidden=false;d.lastChild.hidden=areasStale()||!rm.area;labPos[i]=[(cx/w*0.5+0.5)*W,(1-(cy/w*0.5+0.5))*H];
+    d.style.transform='translate(-50%,-50%) translate('+((cx/w*0.5+0.5)*W).toFixed(1)+'px,'+((1-(cy/w*0.5+0.5))*H).toFixed(1)+'px)';});
+  const sf=items.find(f=>f.id===selId);
+  if(sf){const x=sf.x,y=sf.h+0.05,z=sf.z,cx=M[0]*x+M[4]*y+M[8]*z+M[12],cy=M[1]*x+M[5]*y+M[9]*z+M[13],w=M[3]*x+M[7]*y+M[11]*z+M[15];
+    if(w>0.1){selLab.hidden=false;selLab.style.transform='translate(-50%,-110%) translate('+((cx/w*0.5+0.5)*W).toFixed(1)+'px,'+((1-(cy/w*0.5+0.5))*H).toFixed(1)+'px)';}else selLab.hidden=true;}else selLab.hidden=true;
+  const pj=(x,z)=>{const y=0.02,w=M[3]*x+M[7]*y+M[11]*z+M[15];if(w<=0.1)return null;return [((M[0]*x+M[4]*y+M[8]*z+M[12])/w*0.5+0.5)*W,(1-((M[1]*x+M[5]*y+M[9]*z+M[13])/w*0.5+0.5))*H];};
+  measPos=[];let sv='';for(const m of (wdraw&&tool==='mea'?meas.concat([wdraw]):meas)){const p=pj(m.a[0],m.a[1]),q=pj(m.b[0],m.b[1]);if(!p||!q)continue;
+    const tx=num(Math.hypot(m.b[0]-m.a[0],m.b[1]-m.a[1]),2)+' m';measPos.push([p[0],p[1],q[0],q[1],tx]);
+    sv+='<line x1="'+p[0].toFixed(1)+'" y1="'+p[1].toFixed(1)+'" x2="'+q[0].toFixed(1)+'" y2="'+q[1].toFixed(1)+'"/><circle cx="'+p[0].toFixed(1)+'" cy="'+p[1].toFixed(1)+'" r="3.5"/><circle cx="'+q[0].toFixed(1)+'" cy="'+q[1].toFixed(1)+'" r="3.5"/><text x="'+((p[0]+q[0])/2).toFixed(1)+'" y="'+((p[1]+q[1])/2-12).toFixed(1)+'">'+tx+'</text>';}
+  $('ov').innerHTML=sv;
+}
+function req(){if(!dirty){dirty=true;requestAnimationFrame(draw);}}
+function clamp(){const e=GEO.ext;cam.pitch=Math.max(0.12,Math.min(1.55,cam.pitch));cam.dist=Math.max(4,Math.min(HOME.dist*2.5,cam.dist));cam.tx=Math.max(-3,Math.min(e[0]+3,cam.tx));cam.tz=Math.max(-3,Math.min(e[1]+3,cam.tz));}
+function pan(dx,dy){const k=cam.dist*0.0016,c=Math.cos(cam.yaw),s=Math.sin(cam.yaw);cam.tx+=(-dx*c-dy*s)*k;cam.tz+=(dx*s-dy*c)*k;}
+const pts=new Map();let pinch=0,drag=null,moved=false,dn=[0,0];
+canvas.addEventListener('pointerdown',e=>{canvas.setPointerCapture(e.pointerId);pts.set(e.pointerId,[e.clientX,e.clientY]);pinch=0;moved=false;drag=null;dn=[e.clientX,e.clientY];
+  if(pts.size===1&&!e.shiftKey&&e.button===0){
+    if(tool==='ope')return;
+    if(tool!=='mob'){const g=ground(e);if(g){const ed=edges(),gr=tool==='mea'?100:20,a=[snap(g[0],ed.x,gr),snap(g[1],ed.z,gr)];wdraw={a:a,b:a.slice(),ed:ed,g:gr,th:Math.max(0.05,Math.min(0.6,(parseFloat($('wth').value)||10)/100))};}return;}
+    const f=pick(e),g=ground(e);if(f){select(f.id);if(g)drag={f:f,ox:f.x-g[0],oz:f.z-g[1]};}}});
+function edges(){const x=[],z=[];for(const w of curWalls){x.push(w.r[0],w.r[2]);z.push(w.r[1],w.r[3]);}return {x:x,z:z};}
+function snap(v,arr,g){let b=null,bd=0.08;for(const q of arr){const d=Math.abs(q-v);if(d<bd){bd=d;b=q;}}return b===null?Math.round(v*(g||20))/(g||20):b;}
+canvas.addEventListener('pointermove',e=>{const p=pts.get(e.pointerId);if(!p)return;const dx=e.clientX-p[0],dy=e.clientY-p[1];pts.set(e.pointerId,[e.clientX,e.clientY]);
+  if(Math.hypot(e.clientX-dn[0],e.clientY-dn[1])>4)moved=true;
+  if(wdraw&&pts.size===1){const g=ground(e);if(g){wdraw.b=[snap(g[0],wdraw.ed.x,wdraw.g),snap(g[1],wdraw.ed.z,wdraw.g)];if(tool!=='mea')build();req();}return;}
+  if(drag&&pts.size===1){const g=ground(e);if(g){drag.f.x=Math.max(0,Math.min(GEO.ext[0],Math.round((g[0]+drag.ox)*20)/20));drag.f.z=Math.max(0,Math.min(GEO.ext[1],Math.round((g[1]+drag.oz)*20)/20));build();req();}return;}
+  if(pts.size>=2){const a=[...pts.values()],d=Math.hypot(a[0][0]-a[1][0],a[0][1]-a[1][1]);if(pinch)cam.dist*=pinch/d;pinch=d;pan(dx/2,dy/2);}
+  else if(e.shiftKey||e.buttons===2||e.buttons===4)pan(dx,dy);
+  else{cam.yaw-=dx*0.006;cam.pitch+=dy*0.006;}
+  clamp();req();});
+function up(e){pts.delete(e.pointerId);pinch=0;
+  if(tool==='ope'){if(!moved&&e.type==='pointerup'){const g=ground(e);let hit=null;if(g)for(const q of clickOps){const o=q.o;if(g[0]>o[0]-0.12&&g[0]<o[2]+0.12&&g[1]>o[1]-0.12&&g[1]<o[3]+0.12){hit=q;break;}}
+      if(hit){const nx=TYPES[(TYPES.indexOf(hit.o[4])+1)%TYPES.length];if(nx===GEO.ops[hit.i][4])delete apo[hit.i];else apo[hit.i]=nx;saveA();recompute();wallUi();build();
+        $('toolhint').textContent='Apertura impostata come '+TNAME[nx]+'. Tocca di nuovo per cambiare ancora.';}}
+    req();return;}
+  if(wdraw&&tool==='mea'){const m=wdraw;wdraw=null;if(e.type==='pointerup'&&Math.hypot(m.b[0]-m.a[0],m.b[1]-m.a[1])>0.02)meas.push({a:m.a,b:m.b});wallUi();req();return;}
+  if(wdraw){const r=drawRect();wdraw=null;const lx=r[2]-r[0],lz=r[3]-r[1];
+    if(e.type==='pointerup'&&(tool==='cut'?(lx>0.03&&lz>0.03):(Math.max(lx,lz)>0.15))){ops.push({t:tool,r:r.map(v=>Math.round(v*1000)/1000)});saveW();}
+    recompute();wallUi();build();req();return;}
+  if(drag){drag=null;save();}else if(!moved&&e.type==='pointerup'&&selId!==null)select(null);}
+canvas.addEventListener('pointerup',up);canvas.addEventListener('pointercancel',up);
+canvas.addEventListener('contextmenu',e=>e.preventDefault());
+canvas.addEventListener('wheel',e=>{e.preventDefault();cam.dist*=Math.exp(e.deltaY*0.0012);clamp();req();},{passive:false});
+canvas.addEventListener('keydown',e=>{const k=e.key;let u=true;
+  if(k==='ArrowLeft')cam.yaw+=0.1;else if(k==='ArrowRight')cam.yaw-=0.1;else if(k==='ArrowUp')cam.pitch+=0.08;else if(k==='ArrowDown')cam.pitch-=0.08;
+  else if((k==='r'||k==='R')&&selId!==null){rotSel();}else if((k==='Delete'||k==='Backspace')&&selId!==null){delSel();}else if(k==='Escape'){select(null);}
+  else if(k==='+'||k==='=')cam.dist*=0.9;else if(k==='-')cam.dist*=1.1;else u=false;if(u){e.preventDefault();clamp();req();}});
+const hc=$('hcut'),ho=$('hout');
+hc.addEventListener('input',()=>{hcut=parseFloat(hc.value);ho.textContent=num(hcut)+' m';build();req();});
+$('labels').addEventListener('change',e=>{showLabs=e.target.checked;req();});
+$('glass').addEventListener('change',e=>{showGlass=e.target.checked;build();req();});
+$('bgon').addEventListener('change',e=>{showBg=e.target.checked;req();});
+$('v3d').addEventListener('click',()=>{Object.assign(cam,HOME);req();});
+$('vtop').addEventListener('click',()=>{Object.assign(cam,HOME,{yaw:0,pitch:1.55,dist:HOME.dist*0.93});req();});
+new ResizeObserver(req).observe(stage);
+window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change',req);
+new MutationObserver(req).observe(document.documentElement,{attributes:true,attributeFilter:['data-theme']});
+
+// ---------- mobili
+function refresh(){const f=items.find(q=>q.id===selId);
+  $('selname').textContent=f?f.name+' · '+cm(f.w)+' × '+cm(f.d)+' × '+cm(f.h)+' cm':(items.length?'Tocca un mobile per selezionarlo':'Nessun mobile inserito');
+  selLab.innerHTML=f?f.name.replace(/[<>&]/g,'')+'<small>'+cm(f.w)+' × '+cm(f.d)+' × '+cm(f.h)+' cm</small>':'';
+  $('rot').disabled=$('dup').disabled=$('del').disabled=!f;$('clear').disabled=!items.length;$('clear').textContent='Togli tutti';armed=false;
+  const ul=$('flist');ul.textContent='';for(const q of items){const li=document.createElement('li'),b=document.createElement('button');b.type='button';b.textContent=q.name;b.setAttribute('aria-pressed',q.id===selId?'true':'false');b.addEventListener('click',()=>select(q.id===selId?null:q.id));li.appendChild(b);ul.appendChild(li);}}
+let armed=false;
+function select(id){selId=id;refresh();build();req();}
+function addItem(name,w,d,h,col,x,z){const f={id:nextId++,name:name,w:w/100,d:d/100,h:h/100,col:col,x:Math.round((x==null?cam.tx:x)*20)/20,z:Math.round((z==null?cam.tz:z)*20)/20};items.push(f);save();select(f.id);}
+function rotSel(){const f=items.find(q=>q.id===selId);if(!f)return;const w=f.w;f.w=f.d;f.d=w;save();select(f.id);}
+function delSel(){items=items.filter(q=>q.id!==selId);save();select(null);}
+PRE.forEach(p=>{const b=document.createElement('button');b.type='button';b.innerHTML=p[0]+'<small>'+p[1]+'×'+p[2]+'</small>';b.addEventListener('click',()=>addItem(p[0],p[1],p[2],p[3],p[4]));$('presets').appendChild(b);});
+$('custom').addEventListener('submit',e=>{e.preventDefault();const n=($('cn').value||'Mobile').trim().slice(0,24)||'Mobile',cl=(id,a,b,df)=>{const v=parseFloat($(id).value);return isFinite(v)?Math.max(a,Math.min(b,v)):df;};
+  addItem(n,cl('cw',10,600,100),cl('cd',10,600,50),cl('ch',5,300,80),[0.72,0.56,0.38]);});
+$('rot').addEventListener('click',rotSel);$('del').addEventListener('click',delSel);
+$('dup').addEventListener('click',()=>{const f=items.find(q=>q.id===selId);if(f)addItem(f.name,f.w*100,f.d*100,f.h*100,f.col,f.x+0.3,f.z+0.3);});
+$('clear').addEventListener('click',()=>{if(!armed){armed=true;$('clear').textContent='Conferma: togli tutti';return;}items=[];save();select(null);});
+
+// ---------- esportazione PNG
+function exportPng(){
+  forceDpr=2;draw();const k=canvas.width/W,c=document.createElement('canvas');c.width=canvas.width;c.height=canvas.height;const x=c.getContext('2d');x.drawImage(canvas,0,0);
+  const cs=getComputedStyle(document.documentElement),tok=n=>cs.getPropertyValue(n).trim(),disp='"Barlow Condensed","Arial Narrow",sans-serif';
+  x.textAlign='center';x.textBaseline='middle';
+  roomsNow().forEach((rm,i)=>{const q=labPos[i];if(!q)return;const a=rm.name,b=(areasStale()||!rm.area)?'':num(rm.area)+' m²';
+    x.font='600 '+14*k+'px '+disp;const wa=x.measureText(a).width;x.font='500 '+12*k+'px '+disp;const wb=x.measureText(b).width,bw=Math.max(wa,wb)+12*k,bh=32*k;
+    x.globalAlpha=0.82;x.fillStyle=tok('--panel');x.fillRect(q[0]*k-bw/2,q[1]*k-bh/2,bw,bh);x.globalAlpha=1;
+    x.fillStyle=tok('--fg');x.font='600 '+14*k+'px '+disp;x.fillText(a,q[0]*k,q[1]*k-6*k);x.fillStyle=tok('--muted');x.font='500 '+12*k+'px '+disp;x.fillText(b,q[0]*k,q[1]*k+9*k);});
+  const mk=tok('--mark');for(const m of measPos){x.strokeStyle=mk;x.lineWidth=2*k;x.beginPath();x.moveTo(m[0]*k,m[1]*k);x.lineTo(m[2]*k,m[3]*k);x.stroke();x.fillStyle=mk;
+    for(const q of [[m[0],m[1]],[m[2],m[3]]]){x.beginPath();x.arc(q[0]*k,q[1]*k,3.5*k,0,6.2832);x.fill();}
+    x.font='600 '+15*k+'px '+disp;x.lineJoin='round';x.lineWidth=4*k;x.strokeStyle=tok('--panel');const tx=(m[0]+m[2])/2*k,ty=((m[1]+m[3])/2-12)*k;x.strokeText(m[4],tx,ty);x.fillStyle=mk;x.fillText(m[4],tx,ty);}
+  forceDpr=0;req();return new Promise(res=>c.toBlob(res,'image/png'));}
+// Salvataggio: con la funzione di download della pagina quando c'è; altrimenti il contenuto viene mostrato per essere copiato.
+const dlReady=(window.claude&&window.claude.use)?window.claude.use('downloads').catch(()=>null):Promise.resolve(null);
+function fbShow(kind,msg,payload){const fb=$('fb'),ta=$('fbtxt'),im=$('fbimg');fb.hidden=false;fb.dataset.kind=kind;$('fbmsg').textContent=msg;ta.hidden=kind==='img';im.hidden=kind!=='img';$('fbcopy').hidden=kind!=='text';$('fbopen').hidden=kind!=='paste';
+  if(kind==='img'){if(im.src&&im.src.indexOf('blob:')===0)URL.revokeObjectURL(im.src);im.src=URL.createObjectURL(payload);}else{ta.readOnly=kind==='text';ta.value=payload||'';if(kind==='paste')ta.focus();}
+  fb.scrollIntoView({block:'nearest'});}
+$('fbclose').addEventListener('click',()=>{$('fb').hidden=true;$('fbtxt').value='';});
+$('fbcopy').addEventListener('click',async()=>{const ta=$('fbtxt');ta.focus();ta.select();let ok=false;try{await navigator.clipboard.writeText(ta.value);ok=true;}catch(e){try{ok=document.execCommand('copy');}catch(e2){}}
+  $('fbmsg').textContent=ok?'Testo copiato: incollalo in un file di testo e conservalo.':'Il testo è selezionato: copialo con Ctrl+C (o Cmd+C) e incollalo in un file di testo.';});
+$('fbopen').addEventListener('click',()=>{const t=$('fbtxt').value.trim();if(!t){$('fbmsg').textContent='Incolla qui il testo del progetto salvato.';return;}const err=openProject(t);if(err)$('fbmsg').textContent=err;else{$('fb').hidden=true;$('fbtxt').value='';}});
+$('ppaste').addEventListener('click',()=>fbShow('paste','Incolla qui sotto il testo di un progetto salvato, poi premi "Apri".',''));
+{
+  const hook=(id,msgId,wait,done,make,fall)=>{const b=$(id),m=$(msgId);b.addEventListener('click',async()=>{b.disabled=true;m.textContent=wait;
+      try{const dl=await dlReady,f=await make(!dl);if(!f||!f.data)throw {code:'bad_request'};
+        if(dl){try{await dl.save(f);m.textContent=done;}catch(err){const c=err&&err.code;if(c==='declined')m.textContent='Salvataggio annullato.';else if(c==='rate_limited')m.textContent='C\'è già una richiesta di salvataggio aperta: riprova tra poco.';else{const g=await make(true);m.textContent='';fall(g);}}}
+        else{m.textContent='';fall(f);}}
+      catch(err){m.textContent='Non sono riuscito a preparare il file.';}
+      b.disabled=false;});};
+  hook('png','pngmsg','Preparo l\'immagine…','Immagine salvata.',async()=>({filename:slug()+'.png',data:await exportPng()}),f=>fbShow('img','Qui il download diretto non è disponibile: salva l\'immagine con il tasto destro (o tenendo premuto) e «Salva immagine».',f.data));
+  hook('psave','pmsg','Preparo il file…','Progetto salvato: per riaprirlo usa "Apri progetto salvato".',async()=>({filename:slug()+'.json',data:JSON.stringify(projectFile())}),f=>fbShow('text','Qui il download diretto non è disponibile: copia questo testo e conservalo in un file. Per riaprirlo usa «Incolla progetto…».',f.data));
+  hook('pdxf','pmsg','Preparo il DXF…','DXF salvato dentro un archivio .zip.',async(txt)=>txt?{filename:slug()+'.dxf',data:dxfText()}:{filename:slug()+'-dxf.zip',data:zipOne(slug()+'.dxf',dxfText())},f=>fbShow('text','Qui il download diretto non è disponibile: copia questo testo in un file con estensione .dxf.',f.data));
+}
+
+// ---------- strumenti muri e misure
+const HINTS={mob:'Scegli uno strumento per modificare i muri o prendere una misura direttamente sulla pianta.',
+  mea:'Trascina da un punto all\'altro per leggere la distanza. Gli estremi si agganciano agli spigoli dei muri; altrove la misura va a scatti di 1 cm. Le misure restano sulla vista finché non le cancelli.',
+  add:'Trascina sulla pianta da un punto all\'altro: nasce un muro dritto, dello spessore indicato, alto fino al soffitto. Gli estremi si agganciano ai muri vicini.',
+  cut:'Trascina un rettangolo sulla pianta: tutti i muri al suo interno vengono tolti, comprese finestre e porte che contiene.',
+  ope:'Tocca un\'apertura colorata per cambiarne il tipo: porta (verde), finestra (blu), portafinestra (azzurro), varco aperto senza architrave (giallo), muro pieno (rosso).'};
+let armedW=false;const coarse=window.matchMedia('(pointer:coarse)').matches;
+function wallUi(){for(const k of ['mob','add','cut','ope','mea'])$('t-'+k).setAttribute('aria-pressed',tool===k?'true':'false');$('toolhint').textContent=tool==='ope'&&!GEO.ops.length?'In questa pianta non ci sono aperture riconosciute da correggere.':HINTS[tool];
+  $('wundo').disabled=!ops.length;$('wreset').disabled=!ops.length&&!Object.keys(apo).length;$('mclear').disabled=!meas.length;$('wreset').textContent='Ripristina muri';armedW=false;$('areanote').hidden=!(roomsNow().length&&areasStale());canvas.style.cursor=tool==='mob'?'':'crosshair';
+  $('hint').textContent=tool==='mob'?(coarse?'Un dito: ruota o sposta un mobile · Due dita: vista':'Trascina: ruota · Maiusc + trascina: sposta la vista · Rotella: zoom · Trascina un mobile: lo sposti'):(tool==='add'?'Trascina per disegnare un muro':tool==='mea'?'Trascina tra due punti per misurare':tool==='ope'?'Tocca una porta o una finestra per cambiarne il tipo':'Trascina un rettangolo sui muri da togliere')+(coarse?' · Due dita: sposta la vista':' · Maiusc + trascina: sposta la vista');}
+function setTool(k){tool=k;wdraw=null;if(k!=='mob'){select(null);Object.assign(cam,{yaw:0,pitch:1.55,dist:Math.max(cam.dist,HOME.dist*0.7)});}wallUi();build();req();}
+$('t-mob').addEventListener('click',()=>setTool('mob'));$('t-add').addEventListener('click',()=>setTool('add'));$('t-cut').addEventListener('click',()=>setTool('cut'));$('t-ope').addEventListener('click',()=>setTool('ope'));$('t-mea').addEventListener('click',()=>setTool('mea'));
+$('mclear').addEventListener('click',()=>{meas=[];wallUi();req();});
+$('wundo').addEventListener('click',()=>{ops.pop();saveW();recompute();wallUi();build();req();});
+$('wreset').addEventListener('click',()=>{if(!armedW){armedW=true;$('wreset').textContent='Conferma: ripristina';return;}ops=[];apo={};saveW();saveA();recompute();wallUi();build();req();});
+
+// ---------- testi che dipendono dal progetto
+const NOTES_BUILTIN=['Questo appartamento è inventato: serve solo a provare la pagina e non corrisponde a un edificio reale.',
+ 'Misure di partenza: ingombro 10,00 × 8,00 m più il balcone, muri perimetrali da 30 cm, tramezzi da 10 cm.',
+ 'Altezza del soffitto 2,70 m, porte a 2,10 m, davanzali a 0,90 m, architravi a 2,40 m e parapetto del balcone a 1,00 m: sono valori tipici.',
+ 'Tra ingresso e soggiorno c\'è un varco aperto, senza porta. Con lo strumento "Porte e finestre" puoi cambiare il tipo di ogni apertura.',
+ 'Muri e mobili che modifichi restano salvati in questo browser. Dopo aver cambiato i muri, "Ricalcola le stanze" ridefinisce vani e superfici; i nomi si possono riscrivere nella tabella.'];
+const NOTES_IMPORT=['Muri, porte e finestre sono stati riconosciuti automaticamente dal file. Confrontali con la pianta di sfondo e correggili con "Aggiungi muro", "Demolisci" e "Porte e finestre".',
+ 'Porte e finestre sono riconosciute dalla tacca che le attraversa nelle planimetrie catastali; dove le tacche mancano, come interruzioni tra due tratti di muro allineati. Il tipo è una stima: con lo strumento "Porte e finestre" tocchi un\'apertura per cambiarla in porta, finestra, portafinestra, varco aperto o muro pieno.',
+ 'Un\'apertura può sfuggire, o un semplice vuoto tra due muri può essere preso per una porta. Porte a 2,10 m, davanzali a 0,90 m e architravi a 2,40 m sono valori tipici.',
+ 'Le scritte vengono riconosciute dalla forma (gruppi di piccoli segni allineati) ed escluse; non vengono lette. Una scritta attaccata a un muro, un retino o un arredo possono ancora essere scambiati per muri, soprattutto quando i muri sono a doppia linea.',
+ 'I muri obliqui o curvi sono resi a gradini. Se l\'immagine è storta o fotografata di sbieco, conviene raddrizzarla prima di importarla.',
+ 'Tutte le misure dipendono dalla scala che hai impostato durante l\'importazione. Controllane una con lo strumento "Misura".',
+ 'Le stanze non vengono riconosciute da sole: premi "Ricalcola le stanze" quando muri e aperture sono a posto. Una stanza viene trovata solo se è chiusa tutto intorno da muri, porte o finestre.',
+ 'Di un PDF viene usata una pagina alla volta; di un DXF solo linee, polilinee, archi e cerchi dello spazio modello, senza blocchi né testi.',
+ 'Il progetto resta salvato in questo browser, con l\'immagine portata a 1200 pixel sul lato lungo. Non è visibile da altri dispositivi.'];
+function rebuildLabels(){for(const d of labs)d.remove();labPos.length=0;
+  labs=roomsNow().map(r=>{const d=document.createElement('div');d.className='lab';d.textContent=r.name;const s=document.createElement('small');s.textContent=num(r.area||0)+' m²';d.appendChild(s);stage.insertBefore(d,selLab);return d;});}
+function renderInfo(){
+  $('ptitle').textContent=P.name;
+  $('peyebrow').textContent='Planner piante 3D · '+(P.builtin?'progetto di esempio':'pianta importata, altezza '+num(HT,2)+' m');try{document.title=wrapEl.classList.contains('home')?'Planner piante 3D':P.name+' · Planner piante 3D';}catch(e){}
+  const ul=$('notes');ul.textContent='';for(const t of (P.builtin?NOTES_BUILTIN:NOTES_IMPORT)){const li=document.createElement('li');li.textContent=t;ul.appendChild(li);}
+  const tb=$('tab'),fmt=v=>num(v)+' m²';let h='';const rs=roomsNow(),sw=r=>{const c=roomCol(r).map(v=>Math.round(v*255));return '<span class="sw" style="background:rgb('+c.join(',')+')"></span>';};
+  if(P.builtin&&!userRooms){$('tabh').textContent='Superfici indicative';let si=0,sb=0;h='<tr><th>Vano</th><th>Superficie</th></tr>';
+    for(const n of ['Soggiorno','Cucina','Camera 1','Camera 2','Bagno','Ingresso']){const r=GEO.rooms.find(x=>x.name===n);if(!r)continue;si+=r.area;h+='<tr><td>'+sw(r)+n+'</td><td>'+fmt(r.area)+'</td></tr>';}
+    h+='<tr class="tot"><td>Interno, al netto dei muri</td><td>'+fmt(si)+'</td></tr>';
+    GEO.rooms.filter(r=>r.name.indexOf('Balcone')===0).forEach((r,i)=>{sb+=r.area;h+='<tr'+(i?'':' class="sep"')+'><td>'+sw(r)+r.name+'</td><td>'+fmt(r.area)+'</td></tr>';});
+    if(GEO.rooms.filter(r=>r.name.indexOf('Balcone')===0).length>1)h+='<tr class="tot"><td>Balconi</td><td>'+fmt(sb)+'</td></tr>';
+  }else{$('tabh').textContent=rs.length?'Stanze e superfici':'Dati della pianta';
+    if(rs.length){h='<tr><th>Stanza</th><th>Superficie</th></tr>';let tot=0;rs.forEach((r,i)=>{tot+=r.area;const nm=r.name.replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;');
+        h+='<tr><td>'+sw(r)+(userRooms?'<input type="text" id="rn'+i+'" data-i="'+i+'" maxlength="40" value="'+nm+'" aria-label="Nome della stanza '+(i+1)+'">':nm)+'</td><td>'+fmt(r.area)+'</td></tr>';});
+      h+='<tr class="tot"><td>Totale delle stanze</td><td>'+fmt(tot)+'</td></tr>';}
+    if(!P.builtin)h+='<tr'+(rs.length?' class="sep"':'')+'><td>Ingombro della pianta</td><td>'+num(GEO.ext[0],2)+' × '+num(GEO.ext[1],2)+' m</td></tr><tr><td>Tratti di muro</td><td>'+GEO.walls.length+'</td></tr><tr><td>Porte / finestre di partenza</td><td>'+GEO.ops.filter(o=>o[4]==='door').length+' / '+GEO.ops.filter(o=>o[4]!=='door').length+'</td></tr><tr><td>Altezza del soffitto</td><td>'+num(HT,2)+' m</td></tr>';}
+  tb.innerHTML=h;
+  $('labelsl').hidden=!rs.length;$('glassl').hidden=!GEO.ops.length;$('rreset').hidden=!userRooms;$('rreset').textContent=P.builtin||GEO.rooms.length?'Torna alle stanze di partenza':'Togli le stanze';$('areanote').hidden=!(rs.length&&areasStale());$('bgonl').hidden=P.builtin||!P.img;
+}
+function renderSel(){const s=$('psel');s.textContent='';for(const p of [{id:BUILTIN.id,name:BUILTIN.name}].concat(index)){const o=document.createElement('option');o.value=p.id;o.textContent=p.name;s.appendChild(o);}s.value=P.id;
+  $('pren').disabled=$('pdel').disabled=P.builtin;$('pdel').textContent='Elimina';armedD=false;$('prenf').hidden=true;}
+let armedD=false;
+// ---------- pagina iniziale e vista del progetto
+function renderHome(){const l=$('hlist');l.textContent='';for(const p of index){const b=document.createElement('button');b.type='button';b.textContent=p.name;b.addEventListener('click',()=>loadProject(p.id));l.appendChild(b);}$('hlistbox').hidden=!index.length;}
+function showHome(msg){closeImport();wrapEl.classList.add('home');renderHome();$('hmsg').textContent=msg||'';$('hpbox').hidden=true;$('hptxt').value='';try{document.title='Planner piante 3D';}catch(e){}window.scrollTo(0,0);}
+function showApp(){wrapEl.classList.remove('home');try{document.title=P.name+' · Planner piante 3D';}catch(e){}window.scrollTo(0,0);req();}
+function loadProject(id,msg){
+  let p=getProject(id);if(!p){p=BUILTIN;if(id!==BUILTIN.id)msg='Il progetto scelto non è più disponibile in questo browser.';}
+  P=p;GEO=p.geo;HT=p.ht;LS.set('pl-current',P.id);
+  hc.max=String(HT);hcut=Math.min(1.6,HT);hc.value=String(hcut);ho.textContent=num(hcut)+' m';
+  loadState();
+  rebuildLabels();
+  const e=GEO.ext,big=Math.max(e[0],e[1]);HOME={yaw:0.5,pitch:1.02,dist:big*1.55+1,tx:e[0]/2,tz:e[1]/2+big*0.03};Object.assign(cam,HOME);
+  texReady=false;if(tex){gl.deleteTexture(tex);tex=null;}
+  if(P.img){const im=new Image(),pid=P.id;im.onload=()=>{if(P.id!==pid)return;tex=gl.createTexture();gl.bindTexture(gl.TEXTURE_2D,tex);gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL,false);
+      gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,gl.RGBA,gl.UNSIGNED_BYTE,im);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MIN_FILTER,gl.LINEAR);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MAG_FILTER,gl.LINEAR);
+      gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_S,gl.CLAMP_TO_EDGE);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_T,gl.CLAMP_TO_EDGE);texReady=true;req();};im.src=P.img;
+    const y=0.012;gl.bindBuffer(gl.ARRAY_BUFFER,bufQ);gl.bufferData(gl.ARRAY_BUFFER,new Float32Array([0,y,0,0,0, 0,y,e[1],0,1, e[0],y,e[1],1,1, 0,y,0,0,0, e[0],y,e[1],1,1, e[0],y,0,1,0]),gl.STATIC_DRAW);}
+  renderInfo();renderSel();$('pmsg').textContent=msg||'';
+  recompute();wallUi();refresh();build();showApp();
+}
+$('phome').addEventListener('click',()=>showHome());
+$('himp').addEventListener('click',()=>{$('hmsg').textContent='';$('hpbox').hidden=true;$('pimp').click();});
+$('hopen').addEventListener('click',()=>{$('hmsg').textContent='';$('pfile').click();});
+$('hpaste').addEventListener('click',()=>{closeImport();$('hmsg').textContent='';$('hpbox').hidden=false;$('hptxt').focus();});
+$('hpno').addEventListener('click',()=>{$('hpbox').hidden=true;$('hptxt').value='';});
+$('hpok').addEventListener('click',()=>{const t=$('hptxt').value.trim();if(!t){$('hmsg').textContent='Incolla prima il testo del progetto salvato.';return;}const err=openProject(t);if(err)$('hmsg').textContent=err;});
+$('hex').addEventListener('click',()=>loadProject(BUILTIN.id));
+$('psel').addEventListener('change',e=>loadProject(e.target.value));
+$('pren').addEventListener('click',()=>{if(P.builtin)return;const f=$('prenf');f.hidden=!f.hidden;if(!f.hidden){$('prenn').value=P.name;$('prenn').focus();}});
+$('prenf').addEventListener('submit',e=>{e.preventDefault();if(P.builtin)return;const n=$('prenn').value.trim().slice(0,40);if(!n)return;const m=index.find(p=>p.id===P.id);if(m){m.name=n;P.name=n;saveIndex();}renderInfo();renderSel();$('pmsg').textContent='Nome aggiornato.';});
+$('pdel').addEventListener('click',()=>{if(P.builtin)return;if(!armedD){armedD=true;$('pdel').textContent='Conferma: elimina "'+P.name+'"';return;}
+  const id=P.id;index=index.filter(p=>p.id!==id);saveIndex();delete mem[id];LS.del('pl-'+id+'-geo');LS.del(id+'-muri');LS.del(id+'-mobili');LS.del(id+'-aperture');loadProject(BUILTIN.id);showHome('Progetto eliminato.');});
+
+// ---------- stanze ridefinite dai muri attuali
+function computeRooms(){const cell=0.04,pad=3,e=GEO.ext,gw=Math.ceil(e[0]/cell)+2*pad,gh=Math.ceil(e[1]/cell)+2*pad,n=gw*gh,bar0=new Uint8Array(n);
+  const put=r=>{let x0=Math.round(r[0]/cell)+pad,x1=Math.round(r[2]/cell)+pad,y0=Math.round(r[1]/cell)+pad,y1=Math.round(r[3]/cell)+pad;if(x1<=x0)x1=x0+1;if(y1<=y0)y1=y0+1;x0=Math.max(0,x0);y0=Math.max(0,y0);x1=Math.min(gw,x1);y1=Math.min(gh,y1);for(let y=y0;y<y1;y++)for(let x=x0;x<x1;x++)bar0[y*gw+x]=1;};
+  for(const w of curWalls)put(w.r);for(const o of curOps)if(o[4]!=='gap')put(o);
+  const bar=morph(bar0,gw,gh,1,1,false),free=new Uint8Array(n);for(let i=0;i<n;i++)free[i]=bar[i]?0:1; // chiude le fessure fino a 8 cm
+  const cc=components(free,gw,gh),old=roomsNow(),used=new Set(),list=[];
+  cc.comps.forEach((c,id)=>{if(c.border||c.area*cell*cell<0.6)return;const L=id+1,m=new Uint8Array(n);for(let i=0;i<n;i++)if(cc.lab[i]===L)m[i]=1;
+    const big=morph(m,gw,gh,1,1,false);let area=0;for(let i=0;i<n;i++){big[i]=big[i]&&!bar0[i]?1:0;area+=big[i];}
+    // punto dell'etichetta: il più lontano dai muri
+    const d=new Int32Array(n);for(let i=0;i<n;i++)d[i]=m[i]?1<<28:0;
+    for(let y=c.y0;y<c.y0+c.bh;y++)for(let x=c.x0;x<c.x0+c.bw;x++){const i=y*gw+x;if(!d[i])continue;let v=d[i];if(x>0)v=Math.min(v,d[i-1]+3);if(y>0)v=Math.min(v,d[i-gw]+3);d[i]=v;}
+    let bi=c.y0*gw+c.x0,bv=-1;for(let y=c.y0+c.bh-1;y>=c.y0;y--)for(let x=c.x0+c.bw-1;x>=c.x0;x--){const i=y*gw+x;if(!d[i])continue;let v=d[i];if(x<gw-1)v=Math.min(v,d[i+1]+3);if(y<gh-1)v=Math.min(v,d[i+gw]+3);d[i]=v;if(v>bv){bv=v;bi=i;}}
+    let nm=null,col=null,ba=-1;old.forEach((r,k)=>{if(used.has(k))return;const gx=Math.round(r.c[0]/cell)+pad,gy=Math.round(r.c[1]/cell)+pad;if(gx<0||gy<0||gx>=gw||gy>=gh||cc.lab[gy*gw+gx]!==L)return;if(r.area>ba){ba=r.area;nm={k:k,name:r.name};col=roomCol(r);}});
+    if(nm)used.add(nm.k);const r3=v=>Math.round(v*1000)/1000;
+    list.push({name:nm?nm.name:'',area:Math.round(area*cell*cell*10)/10,c:[r3((bi%gw-pad+0.5)*cell),r3((Math.floor(bi/gw)-pad+0.5)*cell)],col:col,rects:toRects(big,gw,gh,1).map(q=>[r3((q[0]-pad)*cell),r3((q[1]-pad)*cell),r3((q[2]-pad)*cell),r3((q[3]-pad)*cell)])});});
+  list.sort((a,b)=>b.area-a.area);let k=1;const taken=new Set(list.filter(r=>r.col).map(r=>r.col.join()));
+  for(const r of list){if(!r.name){while(list.some(q=>q.name==='Stanza '+k))k++;r.name='Stanza '+k;k++;}if(!r.col){let c=RPAL.find(q=>!taken.has(q.join()))||RPAL[list.indexOf(r)%RPAL.length];taken.add(c.join());r.col=c.slice();}}
+  return list;}
+$('rcalc').addEventListener('click',()=>{const list=computeRooms();if(!list.length){$('rmsg').textContent='Non trovo stanze chiuse: controlla che i muri non abbiano varchi senza porta.';return;}
+  userRooms={list:list,stale:false};saveR();rebuildLabels();renderInfo();wallUi();build();req();$('rmsg').textContent='Trovate '+list.length+' stanze: puoi riscriverne i nomi nella tabella.';});
+$('rreset').addEventListener('click',()=>{userRooms=null;saveR();rebuildLabels();renderInfo();wallUi();build();req();$('rmsg').textContent='';});
+$('tab').addEventListener('change',e=>{const t=e.target;if(!userRooms||!t||t.tagName!=='INPUT')return;const i=parseInt(t.getAttribute('data-i'),10),r=userRooms.list[i];if(!r)return;r.name=t.value.trim().slice(0,40)||('Stanza '+(i+1));t.value=r.name;saveR();rebuildLabels();req();});
+$('modon').addEventListener('change',e=>{showModel=e.target.checked;build();req();});
+
+// ---------- salvataggio su file: progetto completo e DXF
+function slug(){return P.name.toLowerCase().normalize('NFD').replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/g,'')||'pianta';}
+function projectFile(){return {app:'planner-piante-3d',v:1,name:P.name,ht:HT,geo:{walls:GEO.walls,ops:GEO.ops,parapets:GEO.parapets,treads:GEO.treads,rooms:GEO.rooms.map(r=>({name:r.name,area:r.area,c:r.c,rects:r.rects,col:roomCol(r)})),w:GEO.ext[0],d:GEO.ext[1],img:P.img||null},
+  muri:ops,aperture:apo,mobili:items.map(f=>({name:f.name,w:f.w,d:f.d,h:f.h,x:f.x,z:f.z,col:f.col})),vani:userRooms};}
+function openProject(text){let o;try{o=JSON.parse(text);}catch(e){return 'Questo file non è un progetto salvato da questa pagina.';}
+  const g=o&&o.geo;if(!o||o.app!=='planner-piante-3d'||!g||!Array.isArray(g.walls)||!(g.w>0)||!(g.d>0))return 'Questo file non è un progetto salvato da questa pagina.';
+  const walls=g.walls.filter(isRect);if(!walls.length)return 'Il progetto non contiene muri.';
+  const id='p'+Date.now().toString(36)+Math.floor(Math.random()*1296).toString(36);let name=(typeof o.name==='string'&&o.name.trim()?o.name.trim():'Progetto aperto').slice(0,40);{const used=q=>q===BUILTIN.name||index.some(p=>p.name===q),base=name.slice(0,30);for(let k=1;used(name);k++)name=base+(k>1?' (copia '+k+')':' (copia)');}
+  const st={walls:walls.map(r=>r.slice(0,4)),ops:(Array.isArray(g.ops)?g.ops:[]).filter(q=>Array.isArray(q)&&q.length===5&&isRect(q)&&TYPES.indexOf(q[4])>=0),parapets:(Array.isArray(g.parapets)?g.parapets:[]).filter(isRect),treads:(Array.isArray(g.treads)?g.treads:[]).filter(isRect),
+    rooms:(Array.isArray(g.rooms)?g.rooms:[]).filter(isRoom),w:g.w,d:g.d,ht:(o.ht>=2&&o.ht<=5)?o.ht:2.7,img:typeof g.img==='string'&&g.img.indexOf('data:image/')===0?g.img:null};
+  mem[id]=st;index.push({id:id,name:name});saveIndex();let full=LS.set('pl-'+id+'-geo',JSON.stringify(st));if(!full){const im=st.img;st.img=null;LS.set('pl-'+id+'-geo',JSON.stringify(st));st.img=im;}
+  if(Array.isArray(o.muri))LS.set(id+'-muri',JSON.stringify(o.muri));if(o.aperture&&typeof o.aperture==='object')LS.set(id+'-aperture',JSON.stringify(o.aperture));
+  if(Array.isArray(o.mobili))LS.set(id+'-mobili',JSON.stringify(o.mobili));if(o.vani&&Array.isArray(o.vani.list))LS.set(id+'-vani',JSON.stringify(o.vani));
+  loadProject(id,'Progetto "'+name+'" aperto'+(full?'.':'. Nel browser non c\'era spazio per salvarne anche l\'immagine di sfondo.'));return '';}
+$('popen').addEventListener('click',()=>$('pfile').click());
+$('pfile').addEventListener('change',e=>{const f=e.target.files&&e.target.files[0];if(!f)return;const rd=new FileReader();rd.onerror=()=>{$('pmsg').textContent=$('hmsg').textContent='Non riesco a leggere questo file.';};
+  rd.onload=()=>{const err=openProject(String(rd.result||''));if(err)$('pmsg').textContent=$('hmsg').textContent=err;$('pfile').value='';};rd.readAsText(f);});
+function dxfText(){const L=[],w=(...a)=>{for(let i=0;i<a.length;i+=2){L.push(String(a[i]).padStart(3,' '));L.push(String(a[i+1]));}},Y=z=>(GEO.ext[1]-z).toFixed(4),X=x=>x.toFixed(4),asc=t=>t.normalize('NFD').replace(/[^\x20-\x7e]/g,'');
+  const LAY={MURI:7,PARAPETTI:8,PORTE:3,FINESTRE:5,VANI:2,MOBILI:6,MISURE:1};
+  w(0,'SECTION',2,'HEADER',9,'$ACADVER',1,'AC1009',9,'$INSUNITS',70,6,0,'ENDSEC',0,'SECTION',2,'TABLES',0,'TABLE',2,'LTYPE',70,1,0,'LTYPE',2,'CONTINUOUS',70,0,3,'Solid line',72,65,73,0,40,'0.0',0,'ENDTAB',0,'TABLE',2,'LAYER',70,Object.keys(LAY).length+1,0,'LAYER',2,'0',70,0,62,7,6,'CONTINUOUS');
+  for(const k of Object.keys(LAY))w(0,'LAYER',2,k,70,0,62,LAY[k],6,'CONTINUOUS');
+  w(0,'ENDTAB',0,'TABLE',2,'STYLE',70,1,0,'STYLE',2,'STANDARD',70,0,40,'0.0',41,'1.0',50,'0.0',71,0,42,'0.2',3,'txt',4,'',0,'ENDTAB',0,'ENDSEC',0,'SECTION',2,'BLOCKS',0,'ENDSEC',0,'SECTION',2,'ENTITIES');
+  const line=(l,x1,z1,x2,z2)=>w(0,'LINE',8,l,10,X(x1),20,Y(z1),30,'0.0',11,X(x2),21,Y(z2),31,'0.0'),rect=(l,r)=>{line(l,r[0],r[1],r[2],r[1]);line(l,r[2],r[1],r[2],r[3]);line(l,r[2],r[3],r[0],r[3]);line(l,r[0],r[3],r[0],r[1]);},
+    text=(l,x,z,hh,t)=>w(0,'TEXT',8,l,10,X(x),20,Y(z),30,'0.0',40,hh.toFixed(3),1,asc(t),7,'STANDARD');
+  for(const q of curWalls)rect(q.h<HT-0.01?'PARAPETTI':'MURI',q.r);
+  for(const o of curOps){if(o[4]==='gap')continue;rect(o[4]==='door'?'PORTE':'FINESTRE',o);}
+  for(const r of roomsNow()){text('VANI',r.c[0]-0.6,r.c[1],0.18,r.name);if(r.area&&!areasStale())text('VANI',r.c[0]-0.6,r.c[1]+0.3,0.14,num(r.area)+' m2');}
+  for(const f of items){rect('MOBILI',[f.x-f.w/2,f.z-f.d/2,f.x+f.w/2,f.z+f.d/2]);text('MOBILI',f.x-f.w/2+0.03,f.z+0.03,0.1,f.name);}
+  for(const m of meas){line('MISURE',m.a[0],m.a[1],m.b[0],m.b[1]);text('MISURE',(m.a[0]+m.b[0])/2,(m.a[1]+m.b[1])/2-0.08,0.12,num(Math.hypot(m.b[0]-m.a[0],m.b[1]-m.a[1]),2)+' m');}
+  w(0,'ENDSEC',0,'EOF');return L.join('\r\n')+'\r\n';}
+function zipOne(name,text){ // archivio .zip con un solo file, senza compressione
+  const enc=new TextEncoder(),data=enc.encode(text),fn=enc.encode(name);let c,crc=0xFFFFFFFF;const T=new Uint32Array(256);for(let n=0;n<256;n++){c=n;for(let k=0;k<8;k++)c=c&1?0xEDB88320^(c>>>1):c>>>1;T[n]=c>>>0;}
+  for(let i=0;i<data.length;i++)crc=T[(crc^data[i])&255]^(crc>>>8);crc=(crc^0xFFFFFFFF)>>>0;
+  const out=new Uint8Array(30+fn.length+data.length+46+fn.length+22),v=new DataView(out.buffer);let p=0;
+  v.setUint32(p,0x04034b50,true);v.setUint16(p+4,20,true);v.setUint16(p+6,0x0800,true);v.setUint16(p+8,0,true);v.setUint16(p+10,0,true);v.setUint16(p+12,0x21,true);v.setUint32(p+14,crc,true);v.setUint32(p+18,data.length,true);v.setUint32(p+22,data.length,true);v.setUint16(p+26,fn.length,true);v.setUint16(p+28,0,true);
+  out.set(fn,30);out.set(data,30+fn.length);p=30+fn.length+data.length;const cd=p;
+  v.setUint32(p,0x02014b50,true);v.setUint16(p+4,20,true);v.setUint16(p+6,20,true);v.setUint16(p+8,0x0800,true);v.setUint16(p+10,0,true);v.setUint16(p+12,0,true);v.setUint16(p+14,0x21,true);v.setUint32(p+16,crc,true);v.setUint32(p+20,data.length,true);v.setUint32(p+24,data.length,true);v.setUint16(p+28,fn.length,true);
+  v.setUint32(p+42,0,true);out.set(fn,p+46);p+=46+fn.length;
+  v.setUint32(p,0x06054b50,true);v.setUint16(p+8,1,true);v.setUint16(p+10,1,true);v.setUint32(p+12,p-cd,true);v.setUint32(p+16,cd,true);return out;}
+
+// ---------- importazione: da immagine, PDF o DXF a muri, porte e finestre
+const imp={cv:null,w:0,h:0,f:1,norm:null,rects:[],ops:[],texts:[],line:null,busy:0,kind:'',unitPx:0,dpi:0,pdf:null,t1:3};
+function integral(src,w,h){const I=new Int32Array((w+1)*(h+1));for(let y=0;y<h;y++){let s=0;const o=(y+1)*(w+1),p=y*(w+1),r=y*w;for(let x=0;x<w;x++){s+=src[r+x];I[o+x+1]=I[p+x+1]+s;}}return I;}
+function winSum(I,w,h,x0,y0,x1,y1){x0=Math.max(0,x0);y0=Math.max(0,y0);x1=Math.min(w,x1);y1=Math.min(h,y1);if(x1<=x0||y1<=y0)return 0;const W1=w+1;return I[y1*W1+x1]-I[y0*W1+x1]-I[y1*W1+x0]+I[y0*W1+x0];}
+function morph(src,w,h,a,b,full,ay,by){if(ay==null){ay=a;by=b;}const I=integral(src,w,h),out=new Uint8Array(w*h),need=(a+b+1)*(ay+by+1);
+  for(let y=0;y<h;y++)for(let x=0;x<w;x++){const s=winSum(I,w,h,x-a,y-ay,x+b+1,y+by+1);out[y*w+x]=full?(s===need?1:0):(s>0?1:0);}return out;}
+function components(bin,w,h){const n=w*h,lab=new Int32Array(n),st=new Int32Array(n),comps=[];let c=0;
+  for(let i=0;i<n;i++){if(!bin[i]||lab[i])continue;c++;let sp=0;st[sp++]=i;lab[i]=c;let area=0,x0=w,y0=h,x1=0,y1=0,border=false;
+    while(sp){const p=st[--sp],x=p%w,y=(p-x)/w;area++;if(x<x0)x0=x;if(x>x1)x1=x;if(y<y0)y0=y;if(y>y1)y1=y;if(x===0||y===0||x===w-1||y===h-1)border=true;
+      if(x>0&&bin[p-1]&&!lab[p-1]){lab[p-1]=c;st[sp++]=p-1;}if(x<w-1&&bin[p+1]&&!lab[p+1]){lab[p+1]=c;st[sp++]=p+1;}
+      if(y>0&&bin[p-w]&&!lab[p-w]){lab[p-w]=c;st[sp++]=p-w;}if(y<h-1&&bin[p+w]&&!lab[p+w]){lab[p+w]=c;st[sp++]=p+w;}}
+    comps.push({area:area,x0:x0,y0:y0,bw:x1-x0+1,bh:y1-y0+1,border:border});}
+  return {lab:lab,comps:comps};}
+function runsHV(mask,w,h){const n=w*h,rh=new Uint16Array(n),rv=new Uint16Array(n);
+  for(let y=0;y<h;y++){let x=0;while(x<w){if(!mask[y*w+x]){x++;continue;}const s0=x;while(x<w&&mask[y*w+x])x++;const len=Math.min(65535,x-s0);for(let q=s0;q<x;q++)rh[y*w+q]=len;}}
+  for(let x=0;x<w;x++){let y=0;while(y<h){if(!mask[y*w+x]){y++;continue;}const s0=y;while(y<h&&mask[y*w+x])y++;const len=Math.min(65535,y-s0);for(let q=s0;q<y;q++)rv[q*w+x]=len;}}
+  return {rh:rh,rv:rv};}
+// scritte: gruppi di piccole forme allineate (lettere) o macchie larghe e frastagliate (parole fuse)
+function findText(dark,w,h){const cc=components(dark,w,h),C=[],Hmax=Math.round(Math.max(w,h)*0.05);
+  cc.comps.forEach((c,id)=>{const mn=Math.min(c.bw,c.bh),mx=Math.max(c.bw,c.bh);if(c.area<6||mn<2||mn>Hmax||mx>14*mn||mx>Hmax*9)return;const fill=c.area/(c.bw*c.bh);if(fill>=0.8&&mx>=2.5*mn)return;if(c.border)return;
+    // complessità: quante volte in media una riga (o colonna) entra nella forma
+    let tr=0,tc=0;const L=id+1;for(let y=c.y0;y<c.y0+c.bh;y++){let p=0;for(let x=c.x0;x<c.x0+c.bw;x++){const v=cc.lab[y*w+x]===L;if(v&&!p)tr++;p=v;}}
+    for(let x=c.x0;x<c.x0+c.bw;x++){let p=0;for(let y=c.y0;y<c.y0+c.bh;y++){const v=cc.lab[y*w+x]===L;if(v&&!p)tc++;p=v;}}
+    C.push({id:id,x0:c.x0,y0:c.y0,x1:c.x0+c.bw,y1:c.y0+c.bh,bw:c.bw,bh:c.bh,rr:tr/c.bh,rc:tc/c.bw,fill:fill,g:-1});});
+  if(C.length>2500)return {ids:new Set(),boxes:[]};
+  const par=C.map((_,i)=>i),find=i=>{while(par[i]!==i){par[i]=par[par[i]];i=par[i];}return i;};
+  for(let i=0;i<C.length;i++)for(let j=i+1;j<C.length;j++){const a=C[i],b=C[j];
+    const oy=Math.min(a.y1,b.y1)-Math.max(a.y0,b.y0),gx=Math.max(a.x0,b.x0)-Math.min(a.x1,b.x1),hh=Math.max(a.bh,b.bh);
+    const ox=Math.min(a.x1,b.x1)-Math.max(a.x0,b.x0),gy=Math.max(a.y0,b.y0)-Math.min(a.y1,b.y1),ww=Math.max(a.bw,b.bw);
+    const hz=Math.min(a.bh,b.bh)>=0.45*hh&&hh<=Hmax&&oy>=0.5*Math.min(a.bh,b.bh)&&gx<=0.8*hh&&gx>-0.3*hh;
+    const vt=Math.min(a.bw,b.bw)>=0.45*ww&&ww<=Hmax&&ox>=0.5*Math.min(a.bw,b.bw)&&gy<=0.8*ww&&gy>-0.3*ww;
+    if(hz||vt)par[find(i)]=find(j);}
+  const G=new Map();C.forEach((c,i)=>{const r=find(i);if(!G.has(r))G.set(r,[]);G.get(r).push(c);});
+  const ids=new Set(),boxes=[];
+  for(const m of G.values()){const word=m.some(c=>(c.bh<=Hmax&&c.bw>=1.5*c.bh&&c.rr>=1.7)||(c.bw<=Hmax&&c.bh>=1.5*c.bw&&c.rc>=1.7));
+    const glyphs=m.filter(c=>c.fill<0.85||Math.max(c.bw,c.bh)<2.2*Math.min(c.bw,c.bh)).length;
+    if(!(glyphs>=3||word))continue;let x0=w,y0=h,x1=0,y1=0;for(const c of m){ids.add(c.id);x0=Math.min(x0,c.x0);y0=Math.min(y0,c.y0);x1=Math.max(x1,c.x1);y1=Math.max(y1,c.y1);}boxes.push([x0,y0,x1,y1]);}
+  if(ids.size)for(let i=0;i<w*h;i++){const l=cc.lab[i];if(l&&ids.has(l-1))dark[i]=0;}
+  return {ids:ids,boxes:boxes};}
+function strokeStats(dark,w,h){const r=runsHV(dark,w,h),hist=new Float64Array(41);let tot=0;for(let i=0;i<w*h;i++)if(dark[i]){hist[Math.min(40,Math.min(r.rh[i],r.rv[i]))]++;tot++;}
+  let t1=2,b=0;for(let t=1;t<=12;t++)if(hist[t]>b){b=hist[t];t1=t;}const lim=Math.ceil(1.8*t1+1);let thick=0,t2=lim,b2=0;for(let t=lim;t<=40;t++){thick+=hist[t];if(hist[t]>b2){b2=hist[t];t2=t;}}
+  return {t1:t1,t2:t2,thick:tot?thick/tot:0};}
+function hollowWalls(dark,w,h,T){ // chiude lo spazio tra due linee vicine, poi toglie le linee isolate e le macchie troppo spesse per essere muri
+  const n=w*h,c=Math.ceil(T/2),clo=morph(morph(dark,w,h,c,c,false),w,h,c,c,true),sm=T<16?1:2,op=morph(morph(clo,w,h,sm,sm,true),w,h,sm,sm,false),
+    kk=c+2,tk=morph(morph(clo,w,h,kk,kk,true),w,h,kk+1,kk+1,false),m=new Uint8Array(n);
+  for(let i=0;i<n;i++)m[i]=op[i]&&!tk[i]?1:0;return m;}
+function dropSmall(mask,w,h,minLong){const cc=components(mask,w,h);for(let i=0;i<w*h;i++){const l=cc.lab[i];if(l&&Math.max(cc.comps[l-1].bw,cc.comps[l-1].bh)<minLong)mask[i]=0;}return mask;}
+function toRects(mask,w,h,g){const gw=Math.ceil(w/g),gh=Math.ceil(h/g),cell=new Uint8Array(gw*gh),I=integral(mask,w,h);
+  for(let y=0;y<gh;y++)for(let x=0;x<gw;x++){const x1=Math.min(w,(x+1)*g),y1=Math.min(h,(y+1)*g);if(winSum(I,w,h,x*g,y*g,x1,y1)*2>=(x1-x*g)*(y1-y*g))cell[y*gw+x]=1;}
+  const out=[];for(let y=0;y<gh;y++)for(let x=0;x<gw;x++){if(!cell[y*gw+x])continue;let x1=x;while(x1<gw&&cell[y*gw+x1])x1++;let y1=y+1;
+      for(;y1<gh;y1++){let ok=true;for(let k=x;k<x1;k++)if(!cell[y1*gw+k]){ok=false;break;}if(!ok)break;}
+      for(let yy=y;yy<y1;yy++)for(let k=x;k<x1;k++)cell[yy*gw+k]=0;out.push([x*g,y*g,Math.min(w,x1*g),Math.min(h,y1*g)]);}
+  return out;}
+function findOpenings(mask,dark,w,h,k,mode){ // interruzioni tra due tratti di muro allineati
+  const n=w*h,t0=mode==='fill'?k:Math.max(3,Math.round(k/2)),maxT=mode==='fill'?4*k+2:k+6,minRun=Math.max(8,Math.round(2.5*t0)),L=Math.min(320,45*t0),minGap=Math.max(12,3*t0),hl=L>>1;
+  const rr=runsHV(mask,w,h),rh=rr.rh,rv=rr.rv,found=[];
+  for(let dir=0;dir<2;dir++){const sel=new Uint8Array(n);for(let i=0;i<n;i++)if(mask[i]){const al=dir?rv[i]:rh[i],ac=dir?rh[i]:rv[i];if(al>=minRun&&ac<=maxT)sel[i]=1;}
+    const clo=dir?morph(morph(sel,w,h,0,0,false,hl,hl),w,h,0,0,true,hl,hl):morph(morph(sel,w,h,hl,hl,false,0,0),w,h,hl,hl,true,0,0),gap=new Uint8Array(n);
+    for(let i=0;i<n;i++)gap[i]=clo[i]&&!mask[i]?1:0;
+    for(const c of components(gap,w,h).comps){const len0=dir?c.bh:c.bw,th=dir?c.bw:c.bh;if(len0<minGap||len0>L+2||th>maxT||th<2||c.area<0.55*c.bw*c.bh)continue;
+      let s0=-1;for(let a=0;a<=len0;a++){let mk=0;if(a<len0)for(let q=0;q<th;q++)mk+=dir?mask[(c.y0+a)*w+c.x0+q]:mask[(c.y0+q)*w+c.x0+a];const solid=a===len0||mk*2>=th;
+        if(!solid&&s0<0)s0=a;if(solid&&s0>=0){const len=a-s0;if(len>=minGap)found.push(dir?{x0:c.x0,y0:c.y0+s0,x1:c.x0+c.bw,y1:c.y0+a,dir:1,len:len,th:th}:{x0:c.x0+s0,y0:c.y0,x1:c.x0+a,y1:c.y0+c.bh,dir:0,len:len,th:th});s0=-1;}}}}
+  if(!found.length||found.length>400)return {ops:[],walls:[]};
+  const bar=new Uint8Array(n),free=new Uint8Array(n);for(let i=0;i<n;i++)bar[i]=mask[i];
+  for(const o of found)for(let y=o.y0;y<o.y1;y++)for(let x=o.x0;x<o.x1;x++)bar[y*w+x]=1;
+  for(let i=0;i<n;i++)free[i]=bar[i]?0:1;const cc=components(free,w,h),outside=(x,y)=>{if(x<0||y<0||x>=w||y>=h)return 1;const l=cc.lab[y*w+x];return l&&cc.comps[l-1].border?1:0;};
+  const isDark=(x,y)=>x>=0&&y>=0&&x<w&&y<h&&dark[y*w+x]?1:0,med=v=>{v.sort((p,q)=>p-q);return v[v.length>>1];};
+  const res=[],extra=[],thinMax=Math.max(6,t0+2);
+  // due interruzioni parallele e sovrapposte (le due facce di un muro disegnato vuoto) sono una finestra
+  for(let i=0;i<found.length;i++){const p=found[i];if(p.used||p.th>thinMax)continue;for(let j=0;j<found.length;j++){const q=found[j];if(i===j||q.used||q.dir!==p.dir||q.th>thinMax)continue;
+      const pa0=p.dir?p.y0:p.x0,pa1=p.dir?p.y1:p.x1,qa0=q.dir?q.y0:q.x0,qa1=q.dir?q.y1:q.x1,pc1=p.dir?p.x1:p.y1,qc0=q.dir?q.x0:q.y0,qc1=q.dir?q.x1:q.y1,pc0=p.dir?p.x0:p.y0;
+      const a0=Math.max(pa0,qa0),a1=Math.min(pa1,qa1),sep=qc0-pc1;if(sep<Math.max(4,p.th)||sep>maxT+10||a1-a0<0.8*Math.min(p.len,q.len))continue;
+      p.used=q.used=true;res.push(p.dir?[pc0,a0,qc1,a1,'win']:[a0,pc0,a1,qc1,'win']);break;}}
+  for(const o of found){if(o.used||o.th<Math.max(3,t0-1))continue;
+    let dk=0;for(let y=o.y0;y<o.y1;y++)for(let x=o.x0;x<o.x1;x++)dk+=dark[y*w+x];
+    if(o.th<1.5*t0&&o.len>11*o.th&&dk>=0.4*(o.x1-o.x0)*(o.y1-o.y0)){extra.push([o.x0,o.y0,o.x1,o.y1]);continue;} // tratto di muro disegnato più sottile, non un'apertura
+    const e=Math.max(3,Math.round(o.th*0.6)),a0=o.dir?o.y0:o.x0,c0=(o.dir?o.x0:o.y0)-e,c1=(o.dir?o.x1:o.y1)+e,cnts=[];
+    for(let k2=0;k2<7;k2++){const a=Math.round(a0+o.len*(0.15+0.7*k2/6));let c=0,prev=0;for(let q=c0;q<c1;q++){const v=o.dir?isDark(q,a):isDark(a,q);if(v&&!prev)c++;prev=v;}cnts.push(c);}
+    const nL=med(cnts),d=e+3;let oa=0,ob=0;
+    for(let a=a0+2;a<a0+o.len-2;a++){if(o.dir){oa+=outside(o.x0-d,a);ob+=outside(o.x1+d,a);}else{oa+=outside(a,o.y0-d);ob+=outside(a,o.y1+d);}}
+    const ext=Math.max(oa,ob)>0.5*(o.len-4);
+    if(nL===0&&o.len>11*o.th)continue; // vuoto lungo tra due muri: è una stanza, non una porta
+    res.push([o.x0,o.y0,o.x1,o.y1,ext&&nL>=2?'win':'door']);}
+  return {ops:res,walls:extra};}
+// tacche: il trattino sottile che nelle planimetrie catastali attraversa ogni porta e finestra
+function findTicks(dark,w,h,t1){const r=runsHV(dark,w,h),n=w*h,tmax=Math.max(3,Math.round(1.5*t1)+1),Lmin=22,Lmax=150,m=Math.max(4,tmax),D=(x,y)=>x>=0&&y>=0&&x<w&&y<h&&dark[y*w+x]?1:0,out=[];
+  for(let dir=0;dir<2;dir++){const sel=new Uint8Array(n),run=dir?r.rv:r.rh;for(let i=0;i<n;i++)if(dark[i]&&run[i]>=Lmin&&run[i]<=Lmax)sel[i]=1;
+    for(const c of components(sel,w,h).comps){const len=dir?c.bh:c.bw,th=dir?c.bw:c.bh;if(len<Lmin||len>Lmax||th>tmax||c.area<0.7*len*th)continue;
+      const a0=dir?c.y0:c.x0,a1=a0+len-1,c0=dir?c.x0:c.y0,c1=c0+th-1,P=(a,cr)=>dir?D(cr,a):D(a,cr);let bad=0;
+      for(let cr=c0-1;cr<=c1+1;cr++)bad+=P(a0-2,cr)+P(a0-3,cr)+P(a1+2,cr)+P(a1+3,cr);if(bad>1)continue; // estremi liberi
+      let side=0,cntS=0;const q=Math.max(3,Math.round(len*0.22));for(let a=a0;a<a0+q;a++){side+=P(a,c0-2)+P(a,c1+2);cntS+=2;}for(let a=a1-q+1;a<=a1;a++){side+=P(a,c0-2)+P(a,c1+2);cntS+=2;}if(side>0.2*cntS)continue;
+      let sum=0,k=0;for(let a=Math.round(a0+len*0.25);a<=Math.round(a0+len*0.75);a++){let u=0,d=0;for(let j=1;j<=m;j++){u+=P(a,c0-1-j);d+=P(a,c1+1+j);}if(u>=0.7*m&&d>=0.7*m){sum+=a;k++;}}
+      if(!k)continue;const ac=sum/k,cc=(c0+c1)/2;out.push({dir:dir,len:len,th:th,a0:a0,a1:a1,c0:c0,c1:c1,ac:ac,x:dir?cc:ac,y:dir?ac:cc});}}
+  return out;}
+function opsFromTicks(ticks,gaps,dark,w,h,t1){const D=(x,y)=>x>=0&&y>=0&&x<w&&y<h&&dark[y*w+x]?1:0,res=[];
+  for(const t of ticks){const P=(al,cr)=>t.dir?D(al,cr):D(cr,al); // al: lungo il muro, cr: di traverso (lungo la tacca)
+    // per una tacca orizzontale (dir 0) il muro è verticale: "lungo il muro" è y, "di traverso" è x
+    const wallPos=t.dir?t.x:t.y,off=Math.ceil(t.th/2)+3,scan=al=>{const runs=[];let s=-1;for(let cr=t.a0;cr<=t.a1+1;cr++){const v=cr<=t.a1&&P(al,cr);if(v&&s<0)s=cr;if(!v&&s>=0){runs.push([s,cr-1]);s=-1;}}return runs;};
+    const ra=scan(Math.round(wallPos-off)),rb=scan(Math.round(wallPos+off)),runs=ra.length>=rb.length?ra:rb,nL=Math.max(ra.length,rb.length);
+    let maxTh=0;for(const q of ra.concat(rb))maxTh=Math.max(maxTh,q[1]-q[0]+1);
+    let type=(nL>=3||(nL>=1&&maxTh>=t1+2&&maxTh<=4*t1+6))?'win':'door';
+    const g=gaps.find(o=>{const vert=(o[3]-o[1])>(o[2]-o[0]);return vert===(t.dir===0)&&t.x>=o[0]-6&&t.x<=o[2]+6&&t.y>=o[1]-6&&t.y<=o[3]+6;});
+    if(g){res.push([g[0],g[1],g[2],g[3],type==='win'||g[4]==='win'?'win':'door']);continue;}
+    // nessuna interruzione nel muro: seguo l'elemento attraversato dalla tacca (linea della porta o barra della finestra) finché non cambia spessore
+    const walk=(sign,list)=>{if(!list.length)return 0;let best=list[0];for(const q of list)if(Math.abs((q[0]+q[1])/2-t.ac)<Math.abs((best[0]+best[1])/2-t.ac))best=q;
+      let c=(best[0]+best[1])/2;const tw0=best[1]-best[0]+1;let s=off;for(;s<330;s++){const al=Math.round(wallPos+sign*s);let ci=Math.round(c),f=-1;for(let d=0;d<=2;d++){if(P(al,ci+d)){f=ci+d;break;}if(P(al,ci-d)){f=ci-d;break;}}if(f<0)break;
+        let lo=f,hi=f;while(P(al,lo-1)&&f-lo<60)lo--;while(P(al,hi+1)&&hi-f<60)hi++;const tw=hi-lo+1;if(tw>Math.max(1.8*tw0,tw0+3)||tw<0.55*tw0)break;c=(lo+hi)/2;}
+      return s-1;};
+    const eb=walk(1,rb),ea=walk(-1,ra),tot=ea+eb;if(tot<0.35*t.len||tot>2.6*t.len||!runs.length)continue;
+    let cmin=runs[0][0],cmax=runs[runs.length-1][1];const need=Math.max(6,2*t1+2);if(cmax-cmin+1<need){const mid=(cmin+cmax)/2;cmin=Math.round(mid-need/2);cmax=Math.round(mid+need/2);}
+    const A0=Math.round(wallPos-ea),A1=Math.round(wallPos+eb);res.push(t.dir?[A0,cmin,A1,cmax+1,type]:[cmin,A0,cmax+1,A1,type]);}
+  // toglie i doppioni
+  const out=[];for(const o of res){if(out.some(p=>Math.min(p[2],o[2])-Math.max(p[0],o[0])>0&&Math.min(p[3],o[3])-Math.max(p[1],o[1])>0))continue;out.push(o);}
+  return out;}
+function darkOf(){const n=imp.w*imp.h,thr=+$('ithr').value,dark=new Uint8Array(n);for(let i=0;i<n;i++)dark[i]=imp.norm[i]<thr?1:0;return dark;}
+function analyze(){if(!imp.norm)return;const w=imp.w,h=imp.h,k=+$('ithk').value,mode=$('imode').value,dark=darkOf();
+  imp.texts=$('itext').checked?findText(dark,w,h).boxes:[];
+  const st=strokeStats(dark,w,h);imp.t1=st.t1;
+  let mask;if(mode==='fill'){const a=(k-1)>>1,b=k-1-a;mask=morph(morph(dark,w,h,a,b,true),w,h,b,a,false);}else mask=hollowWalls(dark,w,h,k);
+  mask=dropSmall(mask,w,h,Math.max(12,k*4));imp.rects=toRects(mask,w,h,Math.max(1,Math.round(k/4)));if(imp.rects.length>6000)imp.rects=[];
+  imp.ops=[];
+  if(imp.rects.length){const fo=findOpenings(mask,dark,w,h,k,mode),ticks=findTicks(dark,w,h,st.t1);imp.rects=imp.rects.concat(fo.walls);
+    imp.ops=ticks.length>=3?opsFromTicks(ticks,fo.ops,dark,w,h,st.t1):fo.ops;imp.ticks=ticks.length;}
+  paintPreview();impStatus();}
+function schedule(){clearTimeout(imp.busy);imp.busy=setTimeout(analyze,90);}
+function paintPreview(){const c=$('ipv');if(!imp.cv)return;const x=c.getContext('2d');x.drawImage(imp.cv,0,0);
+  x.fillStyle='rgba(230,170,0,0.35)';for(const r of imp.texts)x.fillRect(r[0]-1,r[1]-1,r[2]-r[0]+2,r[3]-r[1]+2);
+  x.fillStyle='rgba(214,40,40,0.55)';for(const r of imp.rects)x.fillRect(r[0],r[1],r[2]-r[0],r[3]-r[1]);
+  for(const o of imp.ops){x.fillStyle=o[4]==='door'?'rgba(20,150,60,0.75)':'rgba(20,90,220,0.75)';x.fillRect(o[0],o[1],o[2]-o[0],o[3]-o[1]);}
+  if(imp.line){const l=imp.line,lw=Math.max(2,imp.w/350);x.strokeStyle='#0b62d6';x.fillStyle='#0b62d6';x.lineWidth=lw;x.beginPath();x.moveTo(l[0],l[1]);x.lineTo(l[2],l[3]);x.stroke();
+    for(const q of [[l[0],l[1]],[l[2],l[3]]]){x.beginPath();x.arc(q[0],q[1],lw*2,0,6.2832);x.fill();}}}
+const UNIT={m:1,cm:0.01,mm:0.001};
+function impScale(){ // metri per pixel dell'immagine di lavoro, oppure 0
+  if($('iscf').checked)return imp.unitPx>0?imp.unitPx*(UNIT[$('iunit').value]||1)/imp.f:0;
+  if($('iscm').checked){const l=imp.line,cmv=parseFloat($('ilen').value);if(!l||!(cmv>0))return 0;const px=Math.hypot(l[2]-l[0],l[3]-l[1]);return px>5?cmv/100/px:0;}
+  const N=parseFloat($('iscale').value),dpi=parseFloat($('idpi').value);if(!(N>0)||!(dpi>0))return 0;return N*0.0254/dpi/imp.f;}
+function impStatus(extra){const st=$('istat'),ok=$('iok');ok.disabled=true;
+  if(!imp.cv){st.textContent=extra||'Nessun file caricato.';return;}
+  let t=imp.rects.length?'Muri trovati: '+imp.rects.length+' tratti, porte '+imp.ops.filter(o=>o[4]==='door').length+', finestre '+imp.ops.filter(o=>o[4]!=='door').length+(imp.texts.length?', scritte escluse '+imp.texts.length:'')+'.':'Nessun muro trovato: prova a cambiare soglia, spessore o tipo di muri.';
+  const s=impScale();
+  if(!s)t+=$('iscm').checked?(imp.line?' Scrivi la lunghezza in cm del tratto blu.':' Ora trascina sull\'anteprima lungo un tratto di lunghezza nota.'):' Indica la scala.';
+  else{const a=imp.w*s,b=imp.h*s;t+=' Ingombro: '+num(a,2)+' × '+num(b,2)+' m.';if(Math.max(a,b)<2||Math.max(a,b)>150)t+=' La scala sembra sbagliata: controlla misura e unità.';else if(imp.rects.length)ok.disabled=false;}
+  st.textContent=(extra?extra+' ':'')+t;}
+function scaleRows(){$('iscmrow').hidden=!$('iscm').checked;$('iscdrow').hidden=!$('iscd').checked;$('iscfrow').hidden=!$('iscf').checked;}
+// porta la sorgente (immagine, pagina PDF o DXF disegnato) alla risoluzione di lavoro e sceglie i valori iniziali
+function prepare(src,meta,name){const sw=src.naturalWidth||src.width,sh=src.naturalHeight||src.height,big=Math.max(sw,sh);if(big<60){impStatus('L\'immagine è troppo piccola.');return;}
+  const f=Math.min(2.5,1200/big),w=Math.max(1,Math.round(sw*f)),h=Math.max(1,Math.round(sh*f)),cv=document.createElement('canvas');cv.width=w;cv.height=h;
+  const x=cv.getContext('2d');x.fillStyle='#fff';x.fillRect(0,0,w,h);x.imageSmoothingQuality='high';x.drawImage(src,0,0,w,h);const d=x.getImageData(0,0,w,h).data,n=w*h,g=new Uint8Array(n);
+  for(let i=0;i<n;i++)g[i]=(d[i*4]*77+d[i*4+1]*150+d[i*4+2]*29)>>8;
+  // compensa l'illuminazione non uniforme delle foto: ogni pixel rispetto alla media del suo intorno
+  const I=integral(g,w,h),R=Math.max(12,Math.round(Math.max(w,h)/18)),nm=new Uint8Array(n),hist=new Float64Array(256);
+  for(let y=0;y<h;y++)for(let xx=0;xx<w;xx++){const x0=Math.max(0,xx-R),y0=Math.max(0,y-R),x1=Math.min(w,xx+R+1),y1=Math.min(h,y+R+1),m=winSum(I,w,h,x0,y0,x1,y1)/((x1-x0)*(y1-y0))||1;
+    const v=Math.min(255,Math.round(g[y*w+xx]/m*215));nm[y*w+xx]=v;hist[v]++;}
+  let sum=0;for(let i=0;i<256;i++)sum+=i*hist[i];let sb=0,wb=0,best=0,thr=125;for(let i=0;i<256;i++){wb+=hist[i];if(!wb)continue;const wf=n-wb;if(!wf)break;sb+=i*hist[i];const mb=sb/wb,mf=(sum-sb)/wf,v=wb*wf*(mb-mf)*(mb-mf);if(v>best){best=v;thr=i;}}
+  thr=Math.max(70,Math.min(170,thr));$('ithr').value=String(thr);$('ithro').textContent=String(thr);
+  Object.assign(imp,{cv:cv,w:w,h:h,f:f,norm:nm,rects:[],ops:[],texts:[],line:null,kind:meta.kind,unitPx:meta.unitPx||0,dpi:meta.dpi||0});
+  // tipo di muri e spessore di partenza, dallo spessore dei tratti del disegno
+  const dk=darkOf();if($('itext').checked)findText(dk,w,h);const st=strokeStats(dk,w,h),fill=st.thick>=0.18;
+  $('imode').value=fill?'fill':'hollow';$('ithkl').textContent=fill?'Spessore minimo':'Spessore massimo';
+  let k=fill?Math.round((st.t1+st.t2)/2):14;if(!fill&&imp.unitPx>0){const s=imp.unitPx*(UNIT[$('iunit').value]||1)/f;if(s>0)k=Math.round(0.34/s);}
+  k=Math.max(2,Math.min(40,k));$('ithk').value=String(k);$('ithko').textContent=k+' px';
+  $('iscfl').hidden=!(imp.unitPx>0);if(imp.unitPx>0)$('iscf').checked=true;else if($('iscf').checked)$('iscm').checked=true;
+  if(meta.dpi){$('idpi').value=String(Math.round(meta.dpi));if(meta.scaleN){$('iscale').value=String(meta.scaleN);$('iscd').checked=true;}}
+  scaleRows();const pv=$('ipv');pv.width=w;pv.height=h;pv.hidden=false;$('iempty').hidden=true;
+  if(name&&($('iname').value.trim()===''||$('iname').value==='Nuova pianta')){const b=name.replace(/\.[^.]+$/,'').replace(/[_-]+/g,' ').trim().slice(0,40);if(b)$('iname').value=b;}
+  analyze();if(meta.note)impStatus(meta.note);}
+function loadImageUrl(url,meta,name,onfail){const im=new Image();im.onerror=()=>{if(onfail)onfail();else impStatus('Questo file non è un\'immagine leggibile dal browser (prova JPG o PNG).');};im.onload=()=>prepare(im,meta,name);im.src=url;}
+// DXF: legge linee, polilinee, archi e cerchi e li disegna come un'immagine al tratto
+function loadDxf(text,name){const L=text.split(/\r\n|\r|\n/),P=[];for(let i=0;i+1<L.length;i+=2){const c=parseInt(L[i],10);if(isNaN(c))continue;P.push([c,L[i+1].trim()]);}
+  let ins=0,i=0,sec='';const segs=[];
+  const arc=(cx,cy,r,a0,a1)=>{if(!(r>0))return;if(a1<=a0)a1+=360;const steps=Math.max(6,Math.ceil((a1-a0)/8));let px=cx+r*Math.cos(a0*Math.PI/180),py=cy+r*Math.sin(a0*Math.PI/180);for(let k=1;k<=steps;k++){const a=(a0+(a1-a0)*k/steps)*Math.PI/180,qx=cx+r*Math.cos(a),qy=cy+r*Math.sin(a);segs.push([px,py,qx,qy]);px=qx;py=qy;}};
+  while(i<P.length){const c=P[i][0],v=P[i][1];
+    if(c===9&&v==='$INSUNITS'&&i+1<P.length){ins=parseInt(P[i+1][1],10)||0;i+=2;continue;}
+    if(c===0&&v==='SECTION'&&i+1<P.length){sec=P[i+1][1];i+=2;continue;}
+    if(c===0&&sec==='ENTITIES'){let j=i+1;const f={},xs=[],ys=[];while(j<P.length&&P[j][0]!==0){const cc=P[j][0],vv=parseFloat(P[j][1]);if(cc===10)xs.push(vv);else if(cc===20)ys.push(vv);else if(!(cc in f))f[cc]=vv;j++;}
+      if(v==='LINE'&&xs.length&&ys.length&&isFinite(f[11])&&isFinite(f[21]))segs.push([xs[0],ys[0],f[11],f[21]]);
+      else if(v==='LWPOLYLINE'){const m=Math.min(xs.length,ys.length);for(let k=1;k<m;k++)segs.push([xs[k-1],ys[k-1],xs[k],ys[k]]);if((f[70]&1)&&m>2)segs.push([xs[m-1],ys[m-1],xs[0],ys[0]]);}
+      else if(v==='POLYLINE'){const pts=[];let k=j;while(k<P.length&&!(P[k][0]===0&&P[k][1]==='SEQEND')){if(P[k][0]===0&&P[k][1]==='VERTEX'){let q=k+1,vx=NaN,vy=NaN;while(q<P.length&&P[q][0]!==0){if(P[q][0]===10)vx=parseFloat(P[q][1]);if(P[q][0]===20)vy=parseFloat(P[q][1]);q++;}if(isFinite(vx)&&isFinite(vy))pts.push([vx,vy]);k=q;}else k++;}
+        for(let q=1;q<pts.length;q++)segs.push([pts[q-1][0],pts[q-1][1],pts[q][0],pts[q][1]]);if((f[70]&1)&&pts.length>2)segs.push([pts[pts.length-1][0],pts[pts.length-1][1],pts[0][0],pts[0][1]]);j=k;}
+      else if(v==='CIRCLE'&&xs.length)arc(xs[0],ys[0],f[40],0,360);
+      else if(v==='ARC'&&xs.length)arc(xs[0],ys[0],f[40],f[50]||0,isFinite(f[51])?f[51]:360);
+      i=j;continue;}
+    i++;}
+  const ok=segs.filter(s=>s.every(isFinite));if(ok.length<4){impStatus('In questo DXF non trovo linee da usare (servono LINE, POLYLINE o LWPOLYLINE nello spazio modello).');return;}
+  let x0=1e300,y0=1e300,x1=-1e300,y1=-1e300;for(const s of ok){x0=Math.min(x0,s[0],s[2]);x1=Math.max(x1,s[0],s[2]);y0=Math.min(y0,s[1],s[3]);y1=Math.max(y1,s[1],s[3]);}
+  const ex=Math.max(x1-x0,y1-y0);if(!(ex>0)){impStatus('Il disegno del DXF non ha estensione.');return;}
+  const M=30,k=1400/ex,cw=Math.round((x1-x0)*k)+2*M,ch=Math.round((y1-y0)*k)+2*M,cv=document.createElement('canvas');cv.width=cw;cv.height=ch;const c=cv.getContext('2d');c.fillStyle='#fff';c.fillRect(0,0,cw,ch);
+  c.strokeStyle='#000';c.lineWidth=1.8;c.lineCap='square';c.beginPath();for(const s of ok){c.moveTo(M+(s[0]-x0)*k,ch-M-(s[1]-y0)*k);c.lineTo(M+(s[2]-x0)*k,ch-M-(s[3]-y0)*k);}c.stroke();
+  const unit=ins===4?'mm':ins===5?'cm':ins===6?'m':(ex>2000?'mm':ex>200?'cm':'m');$('iunit').value=unit;
+  prepare(cv,{kind:'dxf',unitPx:1/k,note:'DXF letto: '+ok.length+' linee, testi ignorati.'},name);}
+// PDF: prova a disegnare la prima pagina con pdf.js; se la libreria non si carica, recupera la scansione incorporata
+let pdfLib=null;
+function needPdfJs(){if(pdfLib)return pdfLib;const base='https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/',add=u=>new Promise((res,rej)=>{const s=document.createElement('script');s.src=u;s.onload=res;s.onerror=()=>rej(new Error('script'));document.head.appendChild(s);});
+  pdfLib=Promise.race([add(base+'pdf.min.js').then(()=>add(base+'pdf.worker.min.js')).then(()=>{const lib=window.pdfjsLib;if(!lib)throw new Error('pdfjs');try{lib.GlobalWorkerOptions.workerSrc=base+'pdf.worker.min.js';}catch(e){}return lib;}),
+    new Promise((_,rej)=>setTimeout(()=>rej(new Error('timeout')),15000))]);pdfLib.catch(()=>{pdfLib=null;});return pdfLib;}
+function pdfJpeg(u8){ // l'immagine JPEG più grande dentro il PDF (le scansioni catastali sono fatte così)
+  const find=(pat,from)=>{outer:for(let i=from;i<=u8.length-pat.length;i++){for(let j=0;j<pat.length;j++)if(u8[i+j]!==pat[j])continue outer;return i;}return -1;};
+  const S=[115,116,114,101,97,109],E=[101,110,100,115,116,114,101,97,109];let pos=0,best=null;
+  for(;;){const s=find(S,pos);if(s<0)break;let b=s+6;if(u8[b]===13)b++;if(u8[b]===10)b++;const e=find(E,b);if(e<0)break;
+    if(u8[b]===0xFF&&u8[b+1]===0xD8&&u8[b+2]===0xFF){let en=e;while(en>b&&(u8[en-1]===10||u8[en-1]===13))en--;if(!best||en-b>best[1]-best[0])best=[b,en];}
+    pos=e+9;}
+  return best?u8.slice(best[0],best[1]):null;}
+async function renderPdfPage(n){const doc=imp.pdf;if(!doc)return;const page=await doc.getPage(n),v1=page.getViewport({scale:1}),dpi=Math.max(72,Math.min(220,72*2600/Math.max(v1.width,v1.height))),vp=page.getViewport({scale:dpi/72});
+  const cv=document.createElement('canvas');cv.width=Math.round(vp.width);cv.height=Math.round(vp.height);const c=cv.getContext('2d');c.fillStyle='#fff';c.fillRect(0,0,cv.width,cv.height);await page.render({canvasContext:c,viewport:vp}).promise;
+  let N=0;try{const tc=await page.getTextContent(),m=/1\s*:\s*(\d{2,4})\b/.exec(tc.items.map(q=>q.str).join(' '));if(m)N=parseInt(m[1],10);}catch(e){}
+  prepare(cv,{kind:'pdf',dpi:dpi,scaleN:N,note:'PDF: pagina '+n+' di '+doc.numPages+(N?', scala 1:'+N+' letta dal testo: controllala.':'.')},imp.pdfName);}
+async function loadPdf(file){impStatus('Leggo il PDF…');let buf;try{buf=new Uint8Array(await file.arrayBuffer());}catch(e){impStatus('Non riesco a leggere questo file.');return;}
+  imp.pdf=null;imp.pdfName=file.name||'';$('ipagel').hidden=true;
+  try{const lib=await needPdfJs(),doc=await lib.getDocument({data:buf.slice(0),isEvalSupported:false}).promise;imp.pdf=doc;$('ipage').max=String(doc.numPages);$('ipage').value='1';$('ipagel').hidden=doc.numPages<2;await renderPdfPage(1);return;}catch(e){}
+  const jpg=pdfJpeg(buf);if(!jpg){impStatus('Non riesco a leggere questo PDF qui. Esportalo come immagine (PNG o JPG) e importa quella.');return;}
+  const url=URL.createObjectURL(new Blob([jpg],{type:'image/jpeg'}));
+  loadImageUrl(url,{kind:'img',note:'Dal PDF ho recuperato la scansione incorporata; le parti vettoriali e i dpi non sono disponibili.'},file.name,()=>impStatus('Non riesco a leggere questo PDF qui. Esportalo come immagine (PNG o JPG) e importa quella.'));}
+function loadFile(file){if(!file)return;const nm=(file.name||'').toLowerCase(),ty=file.type||'';imp.pdf=null;$('ipagel').hidden=true;
+  if(/\.dxf$/.test(nm)){const rd=new FileReader();rd.onerror=()=>impStatus('Non riesco a leggere questo file.');rd.onload=()=>loadDxf(String(rd.result||''),file.name);rd.readAsText(file);return;}
+  if(/\.pdf$/.test(nm)||ty==='application/pdf'){loadPdf(file);return;}
+  if(/\.dwg$/.test(nm)){impStatus('I file DWG non si possono leggere qui: salvalo come DXF dal programma CAD e importa quello.');return;}
+  const rd=new FileReader();rd.onerror=()=>impStatus('Non riesco a leggere questo file.');rd.onload=()=>loadImageUrl(rd.result,{kind:'img'},file.name);rd.readAsDataURL(file);}
+$('ifile').addEventListener('change',e=>loadFile(e.target.files&&e.target.files[0]));
+$('ipage').addEventListener('change',()=>{const n=Math.max(1,Math.min(imp.pdf?imp.pdf.numPages:1,parseInt($('ipage').value,10)||1));$('ipage').value=String(n);renderPdfPage(n).catch(()=>impStatus('Non riesco a disegnare questa pagina.'));});
+$('ithr').addEventListener('input',()=>{$('ithro').textContent=$('ithr').value;schedule();});
+$('ithk').addEventListener('input',()=>{$('ithko').textContent=$('ithk').value+' px';schedule();});
+$('itext').addEventListener('change',schedule);
+$('imode').addEventListener('change',()=>{const hl=$('imode').value==='hollow';$('ithkl').textContent=hl?'Spessore massimo':'Spessore minimo';$('ithk').value=hl?'14':'5';$('ithko').textContent=$('ithk').value+' px';schedule();});
+for(const id of ['ilen','iscale','idpi','iunit'])$(id).addEventListener('input',()=>impStatus());
+for(const id of ['iscm','iscd','iscf'])$(id).addEventListener('change',()=>{scaleRows();impStatus();});
+(function(){const pv=$('ipv');let on=false;const pos=e=>{const r=pv.getBoundingClientRect();return [(e.clientX-r.left)*imp.w/r.width,(e.clientY-r.top)*imp.h/r.height];};
+  pv.addEventListener('pointerdown',e=>{if(!imp.cv||!$('iscm').checked)return;pv.setPointerCapture(e.pointerId);on=true;const p=pos(e);imp.line=[p[0],p[1],p[0],p[1]];paintPreview();});
+  pv.addEventListener('pointermove',e=>{if(!on)return;const p=pos(e);let dx=p[0]-imp.line[0],dy=p[1]-imp.line[1];
+    if(Math.abs(dy)<Math.abs(dx)*0.07)dy=0;else if(Math.abs(dx)<Math.abs(dy)*0.07)dx=0;imp.line[2]=imp.line[0]+dx;imp.line[3]=imp.line[1]+dy;paintPreview();});
+  const end=()=>{if(!on)return;on=false;if(Math.hypot(imp.line[2]-imp.line[0],imp.line[3]-imp.line[1])<6)imp.line=null;paintPreview();impStatus();};
+  pv.addEventListener('pointerup',end);pv.addEventListener('pointercancel',end);})();
+function closeImport(){$('imp').hidden=true;$('pimp').disabled=false;}
+$('pimp').addEventListener('click',()=>{$('imp').hidden=false;$('pimp').disabled=true;$('pmsg').textContent='';impStatus();$('imp').scrollIntoView({block:'start',behavior:'auto'});});
+$('icancel').addEventListener('click',closeImport);
+$('iok').addEventListener('click',()=>{const s=impScale();if(!s||!imp.cv||!imp.rects.length)return;
+  const r3=v=>Math.round(v*1000)/1000,opx=imp.ops.filter(o=>{const l=Math.max(o[2]-o[0],o[3]-o[1])*s;return l>=0.4&&l<=4;});
+  let wr=imp.rects;for(const o of opx){const nx=[];for(const r of wr)for(const q of sub(r,o))nx.push(q);wr=nx;} // i muri lasciano posto alle aperture
+  const walls=wr.map(r=>[r3(r[0]*s),r3(r[1]*s),r3(r[2]*s),r3(r[3]*s)]).filter(r=>r[2]-r[0]>0.004&&r[3]-r[1]>0.004),opn=opx.map(o=>[r3(o[0]*s),r3(o[1]*s),r3(o[2]*s),r3(o[3]*s),o[4]]);
+  let ht=parseFloat($('iht').value)/100;if(!(ht>=2&&ht<=5))ht=2.7;
+  const id='p'+Date.now().toString(36)+Math.floor(Math.random()*1296).toString(36),name=$('iname').value.trim().slice(0,40)||'Nuova pianta';
+  let img=null;try{img=imp.cv.toDataURL('image/jpeg',0.78);}catch(e){}
+  const g={walls:walls,ops:opn,w:r3(imp.w*s),d:r3(imp.h*s),ht:ht,img:img};mem[id]=g;index.push({id:id,name:name});saveIndex();
+  let msg='Progetto creato: controlla muri e aperture sulla pianta di sfondo e correggili con gli strumenti a fianco.';
+  if(!LS.set('pl-'+id+'-geo',JSON.stringify(g))){g.img=null;if(LS.set('pl-'+id+'-geo',JSON.stringify(g))){g.img=img;msg='Progetto creato. Nel browser non c\'era spazio per l\'immagine: al prossimo caricamento resteranno i muri ma non la pianta di sfondo.';}
+    else{g.img=img;msg='Progetto creato, ma il browser non ha spazio per salvarlo: resterà disponibile solo finché tieni aperta questa pagina.';}}
+  closeImport();$('ifile').value='';Object.assign(imp,{cv:null,norm:null,rects:[],ops:[],texts:[],line:null,pdf:null,unitPx:0});$('ipv').hidden=true;$('iempty').hidden=false;$('iname').value='Nuova pianta';$('ilen').value='';$('ipagel').hidden=true;
+  loadProject(id,msg);$('ptitle').scrollIntoView({block:'start',behavior:'auto'});});
+
+// ---------- avvio
+loadProject(BUILTIN.id);showHome();draw();
+})();
+</script>
+
+</body>
+</html>
