@@ -29,7 +29,7 @@ Per importare una pianta:
 | Area | Cosa fa |
 |---|---|
 | Vista | Orbita 3D e vista dall'alto, altezza di taglio dei muri, etichette delle stanze, vetri. Caselle per nascondere **muri e aperture** e la **pianta di sfondo**. |
-| Muri | Aggiungi muro (con aggancio ai muri vicini), taglia muri con un rettangolo, annulla, ripristina. |
+| Muri | Aggiungi muro (con aggancio ai muri vicini), taglia muri con un rettangolo, annulla, ripristina. Con «Aggiungi muro», «Demolisci» e «Porte e finestre» il cursore scatta su una griglia a scelta (1, 5, 10, 25 o 50 cm), disegnata sulla vista; vicino allo spigolo di un muro prevale l'aggancio allo spigolo. |
 | Aperture | Strumento «Porte e finestre»: un clic su un muro aggiunge un'apertura di larghezza standard, il trascinamento lungo il muro ne disegna una di larghezza libera. Di ogni apertura si cambiano tipo (porta, finestra, portafinestra, varco), larghezza, posizione lungo il muro, davanzale e altezza del vano; si può spostarla trascinandola ed eliminarla richiudendo il muro. |
 | Misure | Trascina tra due punti per leggere la distanza; le misure restano sulla vista. |
 | Mobili | Catalogo di mobili predefiniti e mobili su misura; sposta, ruota, duplica, elimina. |

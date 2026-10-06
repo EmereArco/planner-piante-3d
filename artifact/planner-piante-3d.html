@@ -24,6 +24,8 @@ canvas:focus-visible{outline:2px solid var(--accent)}
 .ov{position:absolute;inset:0;width:100%;height:100%;pointer-events:none;z-index:2}
 .ov line{stroke:var(--mark);stroke-width:2}
 .ov circle{fill:var(--mark)}
+.ov line.g{stroke:var(--muted);stroke-width:1;opacity:.22}
+.ov line.gm{stroke:var(--muted);stroke-width:1;opacity:.5}
 .ov text{font-family:var(--display);font-weight:600;font-size:15px;fill:var(--mark);stroke:var(--panel);stroke-width:4px;paint-order:stroke;text-anchor:middle;dominant-baseline:central;font-variant-numeric:tabular-nums}
 .hint{position:absolute;left:12px;bottom:10px;font-size:12.5px;color:var(--muted);background:color-mix(in srgb,var(--panel) 82%,transparent);padding:2px 8px;border-radius:3px;pointer-events:none}
 .err{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;padding:24px;text-align:center;color:var(--muted)}
@@ -222,6 +224,7 @@ li{margin-bottom:5px}
     </fieldset>
   </div>
   <div class="controls">
+    <label for="gstep">Griglia <select id="gstep"><option value="1">1 cm</option><option value="5" selected>5 cm</option><option value="10">10 cm</option><option value="25">25 cm</option><option value="50">50 cm</option></select></label>
     <label for="wth">Spessore <input id="wth" type="number" min="5" max="60" step="1" value="10"> cm</label>
     <button id="wundo" type="button" disabled>Annulla ultima</button>
     <button id="wreset" type="button" disabled>Ripristina muri e aperture</button>
@@ -306,6 +309,7 @@ const PRE=[['Letto matrimoniale',160,200,45,[0.86,0.84,0.80]],['Letto singolo',9
 
 // ---------- stato del progetto corrente
 let ops=[],apo={},xops=[],selOp=null,odrag=null,odraw=null,userRooms=null,showModel=true,curWalls=[],curOps=[],clickOps=[],tool='mob',wdraw=null,meas=[],measPos=[],items=[],selId=null,nextId=1;
+let gridM=0.05;{const v=parseFloat(LS.get('pl-griglia'));if([1,5,10,25,50].indexOf(v)>=0)gridM=v/100;}const gs=v=>Math.round(v/gridM)*gridM; // passo della griglia per muri, demolizioni e aperture
 let seen=new Set();const isDoubt=k=>k[0]!=='a'&&!!GEO.doubt&&GEO.doubt.indexOf(+k)>=0&&!seen.has(+k)&&!apo[k],doubtN=()=>clickOps.filter(q=>isDoubt(q.k)).length;
 const wkey=()=>P.id+'-muri',ikey=()=>P.id+'-mobili',akey=()=>P.id+'-aperture',rkey=()=>P.id+'-vani';
 const RPAL=[[0.88,0.78,0.56],[0.71,0.80,0.61],[0.60,0.76,0.83],[0.86,0.70,0.52],[0.77,0.70,0.81],[0.64,0.77,0.68],[0.79,0.71,0.62],[0.55,0.70,0.80],[0.85,0.74,0.74],[0.72,0.72,0.74]];
@@ -357,13 +361,14 @@ function runOf(o,fax){const ax=fax==null?axisOf(o):fax,cx=1-ax,c0=o[cx],c1=o[cx+
 const OSTD={door:80,win:120,pf:120,gap:90};
 function opAtClick(g,w){const ax=(w[2]-w[0])>=(w[3]-w[1])?0:1,cx=1-ax,pr=w.slice(0,4);pr[ax]=g[ax]-0.005;pr[ax+2]=g[ax]+0.005;const run=runOf(pr,ax);let lo=run[0],hi=run[1];
   for(const q of curOps){if(Math.min(q[cx+2],w[cx+2])-Math.max(q[cx],w[cx])<=0.01)continue;if(q[ax+2]<=g[ax])lo=Math.max(lo,q[ax+2]);else if(q[ax]>=g[ax])hi=Math.min(hi,q[ax]);}
-  const want=Math.max(0.3,Math.min(9,(parseFloat($('owid').value)||OSTD[$('otype').value])/100)),len=Math.min(want,hi-lo);if(len<0.3)return null;
-  const st=Math.max(lo,Math.min(hi-len,Math.round((g[ax]-len/2)*100)/100)),r=w.slice(0,4);r[ax]=st;r[ax+2]=st+len;return {r:r,cut:len<want-0.005};}
+  let want=Math.max(0.3,Math.min(9,(parseFloat($('owid').value)||OSTD[$('otype').value])/100));want=Math.max(Math.ceil(0.3/gridM-1e-9)*gridM,gs(want));const len=Math.min(want,hi-lo);if(len<0.3)return null;
+  const st=Math.max(lo,Math.min(hi-len,gs(g[ax]-len/2))),r=w.slice(0,4);r[ax]=st;r[ax+2]=st+len;return {r:r,cut:len<want-0.005};}
 function opRec(k,make){if(k[0]==='a')return xops[+k.slice(1)];if(!apo[k]&&make)apo[k]={};return apo[k];}
 function opTidy(k){if(k[0]==='a')return;const a=apo[k],g=GEO.ops[k];if(!a)return;if(a.t===g[4])delete a.t;if(a.r&&a.r.every((v,i)=>Math.abs(v-g[i])<0.002)){delete a.r;}if(!a.r)delete a.n;if(!Object.keys(a).length)delete apo[k];}
 function opSetRect(k,r){const a=opRec(k,true);a.r=r.map(v=>Math.round(v*1000)/1000);a.n=ops.length;opTidy(k);}
 function opDraw(){if(!odraw)return null;const a=odraw.a,b=odraw.b,w=odraw.w,ax=Math.abs(b[0]-a[0])>=Math.abs(b[1]-a[1])?0:1,cx=1-ax,r=[0,0,0,0];
-  r[ax]=Math.round(Math.min(a[ax],b[ax])*20)/20;r[ax+2]=Math.round(Math.max(a[ax],b[ax])*20)/20;r[cx]=w[cx];r[cx+2]=w[cx+2];return r;}
+  const sn=v=>{for(const e of [w[ax],w[ax+2]])if(Math.abs(e-v)<0.08)return e;return gs(v);}; // prima gli estremi del muro, poi la griglia
+  r[ax]=sn(Math.min(a[ax],b[ax]));r[ax+2]=sn(Math.max(a[ax],b[ax]));r[cx]=w[cx];r[cx+2]=w[cx+2];return r;}
 function drawRect(){if(!wdraw)return null;const a=wdraw.a,b=wdraw.b;
   if(tool==='cut')return [Math.min(a[0],b[0]),Math.min(a[1],b[1]),Math.max(a[0],b[0]),Math.max(a[1],b[1])];
   const th=wdraw.th/2;if(Math.abs(b[0]-a[0])>=Math.abs(b[1]-a[1]))return [Math.min(a[0],b[0]),a[1]-th,Math.max(a[0],b[0]),a[1]+th];
@@ -441,7 +446,12 @@ function draw(){
   if(sf){const x=sf.x,y=sf.h+0.05,z=sf.z,cx=M[0]*x+M[4]*y+M[8]*z+M[12],cy=M[1]*x+M[5]*y+M[9]*z+M[13],w=M[3]*x+M[7]*y+M[11]*z+M[15];
     if(w>0.1){selLab.hidden=false;selLab.style.transform='translate(-50%,-110%) translate('+((cx/w*0.5+0.5)*W).toFixed(1)+'px,'+((1-(cy/w*0.5+0.5))*H).toFixed(1)+'px)';}else selLab.hidden=true;}else selLab.hidden=true;
   const pj=(x,z)=>{const y=0.02,w=M[3]*x+M[7]*y+M[11]*z+M[15];if(w<=0.1)return null;return [((M[0]*x+M[4]*y+M[8]*z+M[12])/w*0.5+0.5)*W,(1-((M[1]*x+M[5]*y+M[9]*z+M[13])/w*0.5+0.5))*H];};
-  measPos=[];let sv='';for(const m of (wdraw&&tool==='mea'?meas.concat([wdraw]):meas)){const p=pj(m.a[0],m.a[1]),q=pj(m.b[0],m.b[1]);if(!p||!q)continue;
+  measPos=[];let sv='';
+  if(tool==='add'||tool==='cut'||tool==='ope'){const e=GEO.ext,p0=pj(0,0),p1=pj(1,0),ppm=p0&&p1?Math.hypot(p1[0]-p0[0],p1[1]-p0[1]):0;
+    // il passo scelto se a schermo è leggibile, altrimenti un multiplo; ogni metro una linea più marcata
+    let stp=gridM;for(const c of [0.05,0.1,0.25,0.5,1])if(stp*ppm<9&&c>stp)stp=c;if(stp*ppm>=9&&(e[0]+e[1])/stp<=900){const ln=(x0,z0,x1,z1,m)=>{const a=pj(x0,z0),b=pj(x1,z1);if(a&&b)sv+='<line class="'+(m?'gm':'g')+'" x1="'+a[0].toFixed(1)+'" y1="'+a[1].toFixed(1)+'" x2="'+b[0].toFixed(1)+'" y2="'+b[1].toFixed(1)+'"/>';},mj=v=>Math.abs(v-Math.round(v))<1e-6;
+      for(let i=0;i*stp<=e[0]+1e-6;i++){const v=i*stp;ln(v,0,v,e[1],mj(v));}for(let i=0;i*stp<=e[1]+1e-6;i++){const v=i*stp;ln(0,v,e[0],v,mj(v));}}}
+  for(const m of (wdraw&&tool==='mea'?meas.concat([wdraw]):meas)){const p=pj(m.a[0],m.a[1]),q=pj(m.b[0],m.b[1]);if(!p||!q)continue;
     const tx=num(Math.hypot(m.b[0]-m.a[0],m.b[1]-m.a[1]),2)+' m';measPos.push([p[0],p[1],q[0],q[1],tx]);
     sv+='<line x1="'+p[0].toFixed(1)+'" y1="'+p[1].toFixed(1)+'" x2="'+q[0].toFixed(1)+'" y2="'+q[1].toFixed(1)+'"/><circle cx="'+p[0].toFixed(1)+'" cy="'+p[1].toFixed(1)+'" r="3.5"/><circle cx="'+q[0].toFixed(1)+'" cy="'+q[1].toFixed(1)+'" r="3.5"/><text x="'+((p[0]+q[0])/2).toFixed(1)+'" y="'+((p[1]+q[1])/2-12).toFixed(1)+'">'+tx+'</text>';}
   $('ov').innerHTML=sv;
@@ -455,7 +465,7 @@ canvas.addEventListener('pointerdown',e=>{canvas.setPointerCapture(e.pointerId);
     if(tool==='ope'){const g=ground(e);odrag=null;odraw=null;if(!g)return;const hit=hitOp(g);
       if(hit){selOp=hit.k;if(isDoubt(hit.k)){seen.add(+hit.k);LS.set(P.id+'-viste',JSON.stringify([...seen]));}if(hit.o[4]!=='none'){const ax=axisOf(hit.o);odrag={k:hit.k,ax:ax,off:g[ax]-hit.o[ax],run:runOf(hit.o),len:hit.o[ax+2]-hit.o[ax],did:false};}opUi();build();req();return;}
       const w=wallAt(g);if(w)odraw={a:g.slice(),b:g.slice(),w:w.r};else if(selOp!==null){selOp=null;opUi();build();req();}return;}
-    if(tool!=='mob'){const g=ground(e);if(g){const ed=edges(),gr=tool==='mea'?100:20,a=[snap(g[0],ed.x,gr),snap(g[1],ed.z,gr)];wdraw={a:a,b:a.slice(),ed:ed,g:gr,th:Math.max(0.05,Math.min(0.6,(parseFloat($('wth').value)||10)/100))};}return;}
+    if(tool!=='mob'){const g=ground(e);if(g){const ed=edges(),gr=tool==='mea'?100:1/gridM,a=[snap(g[0],ed.x,gr),snap(g[1],ed.z,gr)];wdraw={a:a,b:a.slice(),ed:ed,g:gr,th:Math.max(0.05,Math.min(0.6,(parseFloat($('wth').value)||10)/100))};}return;}
     const f=pick(e),g=ground(e);if(f){select(f.id);if(g)drag={f:f,ox:f.x-g[0],oz:f.z-g[1]};}}});
 function edges(){const x=[],z=[];for(const w of curWalls){x.push(w.r[0],w.r[2]);z.push(w.r[1],w.r[3]);}return {x:x,z:z};}
 function snap(v,arr,g){let b=null,bd=0.08;for(const q of arr){const d=Math.abs(q-v);if(d<bd){bd=d;b=q;}}return b===null?Math.round(v*(g||20))/(g||20):b;}
@@ -463,7 +473,7 @@ canvas.addEventListener('pointermove',e=>{const p=pts.get(e.pointerId);if(!p)ret
   if(Math.hypot(e.clientX-dn[0],e.clientY-dn[1])>4)moved=true;
   if(tool==='ope'&&pts.size===1&&(odrag||odraw)){const g=ground(e);if(!g||!moved)return;
     if(odraw){odraw.b=g.slice();build();req();return;}
-    const o=opByKey(odrag.k);if(!o)return;const ax=odrag.ax,st=Math.max(odrag.run[0],Math.min(odrag.run[1]-odrag.len,Math.round((g[ax]-odrag.off)*100)/100));
+    const o=opByKey(odrag.k);if(!o)return;const ax=odrag.ax,st=Math.max(odrag.run[0],Math.min(odrag.run[1]-odrag.len,gs(g[ax]-odrag.off)));
     if(Math.abs(st-o[ax])>0.004){const r=o.slice(0,4);r[ax]=st;r[ax+2]=st+odrag.len;opSetRect(odrag.k,r);odrag.did=true;recompute();opUi();build();req();}return;}
   if(wdraw&&pts.size===1){const g=ground(e);if(g){wdraw.b=[snap(g[0],wdraw.ed.x,wdraw.g),snap(g[1],wdraw.ed.z,wdraw.g)];if(tool!=='mea')build();req();}return;}
   if(drag&&pts.size===1){const g=ground(e);if(g){drag.f.x=Math.max(0,Math.min(GEO.ext[0],Math.round((g[0]+drag.ox)*20)/20));drag.f.z=Math.max(0,Math.min(GEO.ext[1],Math.round((g[1]+drag.oz)*20)/20));build();req();}return;}
@@ -560,9 +570,9 @@ $('ppaste').addEventListener('click',()=>fbShow('paste','Incolla qui sotto il te
 // ---------- strumenti muri e misure
 const HINTS={mob:'Scegli uno strumento per modificare i muri o prendere una misura direttamente sulla pianta.',
   mea:'Trascina da un punto all\'altro per leggere la distanza. Gli estremi si agganciano agli spigoli dei muri; altrove la misura va a scatti di 1 cm. Le misure restano sulla vista finché non le cancelli.',
-  add:'Trascina sulla pianta da un punto all\'altro: nasce un muro dritto, dello spessore indicato, alto fino al soffitto. Gli estremi si agganciano ai muri vicini.',
-  cut:'Trascina un rettangolo sulla pianta: tutti i muri al suo interno vengono tolti, comprese finestre e porte che contiene.',
-  ope:'Per aggiungere un\'apertura scegli il tipo, poi tocca un muro (larghezza standard) oppure trascina lungo il muro (larghezza libera). Tocca un\'apertura colorata per selezionarla e modificarla; trascinala per spostarla lungo il muro. Colori: porta verde, finestra blu, portafinestra azzurro, varco giallo, apertura eliminata rosso.'};
+  add:'Trascina sulla pianta da un punto all\'altro: nasce un muro dritto, dello spessore indicato, alto fino al soffitto. Gli estremi si agganciano agli spigoli dei muri vicini; altrove scattano sulla griglia scelta qui sotto.',
+  cut:'Trascina un rettangolo sulla pianta: tutti i muri al suo interno vengono tolti, comprese finestre e porte che contiene. I lati del rettangolo scattano sulla griglia, o sugli spigoli dei muri vicini.',
+  ope:'Per aggiungere un\'apertura scegli il tipo, poi tocca un muro (larghezza standard) oppure trascina lungo il muro (larghezza libera). Posizione e larghezza scattano sulla griglia scelta qui sotto. Tocca un\'apertura colorata per selezionarla e modificarla; trascinala per spostarla lungo il muro. Colori: porta verde, finestra blu, portafinestra azzurro, varco giallo, apertura eliminata rosso.'};
 function opUi(){const on=tool==='ope';$('opanel').hidden=!on;if(!on)return;const o=selOp!==null?opByKey(selOp):null;$('oedit').hidden=!o;if(!o)return;
   const none=o[4]==='none',ax=axisOf(o),run=none?[o[ax],o[ax+2]]:(odrag&&odrag.k===selOp?odrag.run:runOf(o));
   $('oleg').textContent=none?'Apertura eliminata (muro pieno)':TNAME[o[4]].charAt(0).toUpperCase()+TNAME[o[4]].slice(1)+' selezionata';$('ofields').hidden=none;$('edel').textContent=none?'Ripristina apertura':'Elimina apertura';if(none)return;
@@ -571,6 +581,7 @@ function opUi(){const on=tool==='ope';$('opanel').hidden=!on;if(!on)return;const
 function opCommit(msg){saveA();recompute();wallUi();build();req();$('omsg').textContent=msg||'';}
 function opEdit(fn){return ()=>{const o=selOp!==null?opByKey(selOp):null;if(!o)return;fn(o,opRec(selOp,true));opTidy(selOp);opCommit();};}
 $('otype').addEventListener('change',()=>{$('owid').value=OSTD[$('otype').value];});
+{const g=$('gstep');g.value=String(Math.round(gridM*100));g.addEventListener('change',()=>{const v=parseFloat(g.value);if(!(v>0))return;gridM=v/100;LS.set('pl-griglia',String(v));req();});}
 $('etype').addEventListener('change',opEdit((o,a)=>{a.t=$('etype').value;delete a.sill;delete a.top;}));
 $('ew').addEventListener('change',opEdit((o,a)=>{const ax=axisOf(o),run=runOf(o),len=Math.max(0.3,Math.min(run[1]-run[0],(parseFloat($('ew').value)||0)/100)),r=o.slice(0,4);if(o[ax]+len>run[1])r[ax]=run[1]-len;r[ax+2]=r[ax]+len;a.r=r.map(v=>Math.round(v*1000)/1000);a.n=ops.length;}));
 $('epos').addEventListener('change',opEdit((o,a)=>{const ax=axisOf(o),run=runOf(o),len=o[ax+2]-o[ax],st=Math.max(run[0],Math.min(run[1]-len,run[0]+(parseFloat($('epos').value)||0)/100)),r=o.slice(0,4);r[ax]=st;r[ax+2]=st+len;a.r=r.map(v=>Math.round(v*1000)/1000);a.n=ops.length;}));
