@@ -173,7 +173,7 @@ li{margin-bottom:5px}
       <fieldset><legend>3 · Muri</legend>
         <label for="imode">Nel disegno i muri sono <select id="imode"><option value="fill">pieni (linee spesse o scure)</option><option value="hollow">a doppia linea (vuoti dentro)</option></select></label>
         <label for="ithr">Soglia del nero <input id="ithr" type="range" min="40" max="220" step="1" value="125"> <output id="ithro" for="ithr">125</output></label>
-        <label for="ithk"><span id="ithkl">Spessore minimo</span> <input id="ithk" type="range" min="2" max="40" step="1" value="5"> <output id="ithko" for="ithk">5 px</output></label>
+        <label for="ithk"><span id="ithkl">Spessore minimo</span> <input id="ithk" type="range" min="2" max="60" step="1" value="5"> <output id="ithko" for="ithk">5 px</output></label>
         <label for="itext"><input id="itext" type="checkbox" checked> Riconosci ed escludi le scritte</label>
         <p>Tipo di muri e cursori partono da valori scelti in automatico: regolali finché il rosso copre i muri. Le aperture trovate nei muri sono in verde (porte) e in blu (finestre). Quello che resta sbagliato lo correggi dopo, sul modello.</p>
       </fieldset>
@@ -782,6 +782,21 @@ function strokeStats(dark,w,h){const r=runsHV(dark,w,h),hist=new Float64Array(41
   let mx=0,tm=2;for(let t=1;t<=12;t++)if(hist[t]>mx){mx=hist[t];tm=t;}let t1=2;for(let t=1;t<=12;t++)if(hist[t]>=Math.max(0.04,0.25*mx)){t1=t;break;}
   const lim=Math.ceil(1.8*t1+1);let thick=0,t2=lim,b2=0,tp=0;for(let t=lim;t<=40;t++){thick+=hist[t];if(hist[t]>b2){b2=hist[t];t2=t;}if(!tp&&hist[t]>=0.04)tp=t;}
   return {t1:t1,tm:tm,t2:t2,tp:tp||t2,thick:thick};} // tm: spessore più frequente // tp: il muro pieno più sottile (i tramezzi)
+// Muri a doppia linea: lo spazio bianco chiuso tra le due linee è una striscia stretta e lunga. La riempio e ottengo il muro pieno.
+// T: larghezza massima (px) dello spazio tra le due linee. Restituisce anche gli spessori trovati.
+function cavityWalls(dark,w,h,T,boxes){const n=w*h,wh=new Uint8Array(n);for(let i=0;i<n;i++)wh[i]=dark[i]?0:1;const cc=components(wh,w,h),rr=runsHV(wh,w,h),N=cc.comps.length,B=66,hist=new Uint32Array((N+1)*B);
+  for(let i=0;i<n;i++){const l=cc.lab[i];if(l)hist[l*B+Math.min(B-1,Math.min(rr.rh[i],rr.rv[i]))]++;}
+  const C=[];cc.comps.forEach((c,i)=>{if(c.border||c.area<40)return;if(boxes){const mx=c.x0+c.bw/2,my=c.y0+c.bh/2;if(boxes.some(b=>mx>=b[0]&&mx<=b[2]&&my>=b[1]&&my<=b[3]&&c.bw<=b[2]-b[0]+4&&c.bh<=b[3]-b[1]+4))return;} // i vuoti dentro le lettere
+    let ac=0,wd=0;for(let t=1;t<B;t++){ac+=hist[(i+1)*B+t];if(ac>=0.9*c.area){wd=t;break;}}if(wd<2||wd>T)return;C.push({i:i+1,x0:c.x0,y0:c.y0,bw:c.bw,bh:c.bh,a:c.area,wd:wd,el:c.area/(wd*wd),ln:c.area/wd});});
+  // gradini: celle quasi uguali, impilate una accanto all'altra
+  for(const p of C){if(Math.min(p.bw,p.bh)<8)continue;const hz=p.bw>=p.bh;let chain=1;for(const q of C){if(q===p||Math.abs(q.bw-p.bw)>0.2*p.bw+2||Math.abs(q.bh-p.bh)>0.2*p.bh+2)continue;
+      const d=hz?Math.abs(q.y0-p.y0):Math.abs(q.x0-p.x0),ov=hz?Math.min(p.x0+p.bw,q.x0+q.bw)-Math.max(p.x0,q.x0):Math.min(p.y0+p.bh,q.y0+q.bh)-Math.max(p.y0,q.y0),sh=hz?p.bh:p.bw;if(d>0&&d<=3.6*sh+6&&ov>=0.5*(hz?p.bw:p.bh))chain++;}
+    if(chain>=4)p.st=true;}
+  const K=C.filter(p=>!p.st),S=K.filter(p=>p.el>=2).sort((p,q)=>p.wd-q.wd);let tot=0,ac=0,med=0;for(const p of S)tot+=p.ln;for(const p of S){ac+=p.ln;if(ac>=0.5*tot){med=p.wd;break;}}
+  const keep=new Uint8Array(N+1);let maxWd=0,minWd=99,cnt=0;for(const p of K){const ok=Math.abs(p.wd-med)<=0.2*med?p.el>=1:p.wd<=1.6*med?p.el>=2:p.el>=6;if(ok){keep[p.i]=1;cnt++;if(p.wd>maxWd)maxWd=p.wd;if(p.el>=4&&p.wd<minWd)minWd=p.wd;}}
+  const cm=new Uint8Array(n);let area=0;for(let i=0;i<n;i++)if(keep[cc.lab[i]]){cm[i]=1;area++;}
+  const dl=morph(cm,w,h,2,2,false),mask=new Uint8Array(n);for(let i=0;i<n;i++)mask[i]=cm[i]||(dl[i]&&dark[i])?1:0;
+  return {mask:mask,area:area,n:cnt,maxWd:maxWd,minWd:minWd===99?maxWd:minWd,med:med};}
 function hollowWalls(dark,w,h,T){ // chiude lo spazio tra due linee vicine, poi toglie le linee isolate e le macchie troppo spesse per essere muri
   const n=w*h,c=Math.ceil(T/2),clo=morph(morph(dark,w,h,c,c,false),w,h,c,c,true),sm=T<16?1:2,op=morph(morph(clo,w,h,sm,sm,true),w,h,sm,sm,false),
     kk=c+2,tk=morph(morph(clo,w,h,kk,kk,true),w,h,kk+1,kk+1,false),m=new Uint8Array(n);
@@ -813,8 +828,8 @@ function toRects(mask,w,h,g){const gw=Math.ceil(w/g),gh=Math.ceil(h/g),cell=new 
       for(;y1<gh;y1++){let ok=true;for(let k=x;k<x1;k++)if(!cell[y1*gw+k]){ok=false;break;}if(!ok)break;}
       for(let yy=y;yy<y1;yy++)for(let k=x;k<x1;k++)cell[yy*gw+k]=0;out.push([x*g,y*g,Math.min(w,x1*g),Math.min(h,y1*g)]);}
   return out;}
-function findOpenings(mask,dark,w,h,k,mode,ink){ // interruzioni tra due tratti di muro allineati
-  const n=w*h,t0=mode==='fill'?k:Math.max(3,Math.round(k/2)),rr=runsHV(mask,w,h),rh=rr.rh,rv=rr.rv,maxT=mode==='fill'?4*k+2:k+6;
+function findOpenings(mask,dark,w,h,k,mode,ink,t0c){ // interruzioni tra due tratti di muro allineati
+  const n=w*h,t0=mode==='fill'?k:(t0c||Math.max(3,Math.round(k/2))),rr=runsHV(mask,w,h),rh=rr.rh,rv=rr.rv,maxT=mode==='fill'?4*k+2:k+6;
   const minRun=Math.max(8,Math.round(2.5*t0)),L=Math.min(320,45*t0),minGap=Math.max(12,3*t0),hl=L>>1;
   const found=[];
   for(let dir=0;dir<2;dir++){const sel=new Uint8Array(n);for(let i=0;i<n;i++)if(mask[i]){const al=dir?rv[i]:rh[i],ac=dir?rh[i]:rv[i];if(al>=minRun&&ac<=maxT)sel[i]=1;}
@@ -903,17 +918,23 @@ function skewAngle(dark,w,h){const P=[],st=Math.max(1,Math.round(Math.sqrt(w*h/6
   let ba=0,bs=-1;for(let a=-12;a<=12.001;a+=0.5){const q=score(a*Math.PI/180);if(q>bs){bs=q;ba=a;}}const c0=ba;for(let a=c0-0.4;a<=c0+0.401;a+=0.1){const q=score(a*Math.PI/180);if(q>bs){bs=q;ba=a;}}
   return Math.round(ba*10)/10;}
 function darkOf(tv){const n=imp.w*imp.h,thr=tv||+$('ithr').value,dark=new Uint8Array(n);for(let i=0;i<n;i++)dark[i]=imp.norm[i]<thr?1:0;return dark;}
-function analyze(){if(!imp.norm)return;const w=imp.w,h=imp.h,k=+$('ithk').value,mode=$('imode').value,dark=darkOf();
+function analyze(){if(!imp.norm)return;const w=imp.w,h=imp.h,k=+$('ithk').value,mode=$('imode').value,dark=darkOf(),dark0=mode==='hollow'?dark.slice():null;
   const bar=findBar(dark,w,h);if(bar){const q=bar.box;for(let y=Math.max(0,q[1]);y<Math.min(h,q[3]);y++)for(let x=Math.max(0,q[0]);x<Math.min(w,q[2]);x++)dark[y*w+x]=0;} // la barra metrica non è un muro
   imp.texts=$('itext').checked?findText(dark,w,h).boxes:[];
   const st=strokeStats(dark,w,h);st.t1=st.thick>=0.18?st.t1:st.tm;imp.t1=st.t1;
-  let mask;if(mode==='fill'){const a=(k-1)>>1,b=k-1-a;mask=morph(morph(dark,w,h,a,b,true),w,h,b,a,false);}else mask=hollowWalls(dark,w,h,k);
+  let mask,cav=null;if(mode==='fill'){const a=(k-1)>>1,b=k-1-a;mask=morph(morph(dark,w,h,a,b,true),w,h,b,a,false);}
+  else{ // le doppie linee chiuse vengono riempite; dove non si chiudono (porte senza stipite, scansioni rovinate) resta il metodo a chiusura
+    mask=hollowWalls(dark,w,h,imp.unitPx>0?k:Math.min(k,14));cav=cavityWalls(dark0,w,h,k,imp.texts);if(cav.n){for(let i=0;i<w*h;i++)if(cav.mask[i])mask[i]=1;}else cav=null;}
   mask=dropSmall(mask,w,h,Math.max(12,k*4));if(mode==='fill')cleanFill(mask,w,h);const gr=Math.max(1,Math.round(k/4));imp.rects=toRects(mask,w,h,gr);if(imp.rects.length>6000)imp.rects=[];
   imp.ops=[];
   if(imp.rects.length){const ticks=findTicks(dark,w,h,st.t1),clean=mode==='fill'&&ticks.length<3, // disegno a muri pieni senza le tacche catastali
-      fo=findOpenings(mask,dark,w,h,k,mode,clean?faintInk(imp.norm,w,h,mask):null);
+      fo=findOpenings(mask,dark,w,h,k,mode,clean?faintInk(imp.norm,w,h,mask):null,cav?Math.max(6,Math.min(Math.round(k/2),cav.minWd+1)):0);
     if(clean&&dropSymbols(mask,w,h,fo.ops)){imp.rects=toRects(mask,w,h,gr);fo.ops=fo.ops.filter(o=>!o.dead);}imp.rects=imp.rects.concat(fo.walls);
-    imp.ops=ticks.length>=3?opsFromTicks(ticks,fo.ops,dark,w,h,st.t1):fo.ops;imp.ticks=ticks.length;}
+    if(ticks.length>=3){imp.ops=opsFromTicks(ticks,fo.ops,dark,w,h,st.t1);
+      if(cav){ // muri pieni ricostruiti: un'interruzione netta senza tacca, larga come le altre aperture, è una porta da controllare
+        const ls=imp.ops.map(o=>Math.max(o[2]-o[0],o[3]-o[1])).sort((p,q)=>p-q),ml=ls.length?ls[ls.length>>1]:0;
+        for(const g of fo.ops){const l=Math.max(g[2]-g[0],g[3]-g[1]);if(ml&&(l<0.3*ml||l>1.9*ml))continue;if(imp.ops.some(o=>Math.min(o[2],g[2])-Math.max(o[0],g[0])>-6&&Math.min(o[3],g[3])-Math.max(o[1],g[1])>-6))continue;const op=[g[0],g[1],g[2],g[3],'door'];op.dq=true;imp.ops.push(op);}}}
+    else imp.ops=fo.ops;imp.ticks=ticks.length;}
   paintPreview();impStatus();}
 function schedule(){clearTimeout(imp.busy);imp.busy=setTimeout(analyze,90);}
 function paintPreview(){const c=$('ipv');if(!imp.cv)return;const x=c.getContext('2d');x.drawImage(imp.cv,0,0);
@@ -961,10 +982,10 @@ function prepare0(src,meta,name,first){const sw=src.naturalWidth||src.width,sh=s
   // tipo di muri e spessore di partenza, dallo spessore dei tratti del disegno
   const dk=darkOf();if($('itext').checked)findText(dk,w,h);const st=strokeStats(dk,w,h),fill=st.thick>=0.18;
   $('imode').value=fill?'fill':'hollow';$('ithkl').textContent=fill?'Spessore minimo':'Spessore massimo';
-  let k=fill?Math.max(st.t1+1,Math.round((st.t1+st.tp)/2)):14;
+  let k=fill?Math.max(st.t1+1,Math.round((st.t1+st.tp)/2)):14;if(!fill&&!(imp.unitPx>0)){const c0=cavityWalls(darkOf(),w,h,Math.round(0.04*Math.max(w,h)));if(c0.n>=4)k=Math.max(14,c0.maxWd+2);}
   if(fill){ // le linee sottili sbiadite dal rimpicciolimento si vedono solo con una soglia più larga: servono a capire se i tratti più sottili del disegno sono tramezzi
     const sl=strokeStats(darkOf(Math.min(200,thr+45)),w,h);if(sl.t1<st.t1&&sl.thick>=0.18)k=Math.min(k,Math.max(sl.t1+2,Math.round((sl.t1+sl.tp)/2)));}if(!fill&&imp.unitPx>0){const s=imp.unitPx*(UNIT[$('iunit').value]||1)/f;if(s>0)k=Math.round(0.34/s);}
-  k=Math.max(2,Math.min(40,k));$('ithk').value=String(k);$('ithko').textContent=k+' px';
+  k=Math.max(2,Math.min(60,k));$('ithk').value=String(k);$('ithko').textContent=k+' px';
   $('iscfl').hidden=!(imp.unitPx>0);if(imp.unitPx>0)$('iscf').checked=true;else if($('iscf').checked)$('iscm').checked=true;
   if(meta.dpi){$('idpi').value=String(Math.round(meta.dpi));if(meta.scaleN){$('iscale').value=String(meta.scaleN);$('iscd').checked=true;}}
   scaleRows();const pv=$('ipv');pv.width=w;pv.height=h;pv.hidden=false;$('iempty').hidden=true;

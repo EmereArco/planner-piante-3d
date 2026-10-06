@@ -62,6 +62,7 @@ L'immagine viene portata a 1200 px sul lato lungo e passa per questi stadi:
 3. **Esclusione delle scritte**: le componenti connesse piccole e allineate vengono raggruppate come testo e cancellate.
 4. Stima dello spessore dei tratti per scegliere la modalità: muri *pieni* o *a doppia linea* (chiusura e apertura, resi comunque come muri pieni).
    Nei disegni a muri pieni lo spessore minimo viene messo a metà tra le linee sottili (arredi, ante, scale) e il muro più sottile, così restano anche i tramezzi. Vengono poi scartati la cornice del foglio, i pezzi piccoli staccati dall'edificio (legenda, scala grafica) e i simboli pieni come frecce e nord.
+   Nei disegni a doppia linea, lo spazio bianco chiuso tra le due linee viene riconosciuto come striscia stretta e lunga e riempito: il muro esce pieno, dello spessore disegnato. Le celle uguali impilate (gradini) e le strisce larghe e corte (balconi, ripostigli) vengono escluse. Dove le due linee non si chiudono resta il metodo a chiusura.
 5. Scomposizione dei muri in rettangoli allineati agli assi.
 6. **Porte e finestre**: interruzioni tra tratti di muro allineati; dove la pianta usa i trattini catastali, questi confermano le aperture. Nei disegni a muri pieni senza trattini, un vano che dà sull'esterno è una finestra, o una portafinestra se sul lato interno è disegnata l'anta; gli altri sono porte.
 7. **Stanze**: riempimento su griglia da 4 cm delle zone chiuse da muri e aperture; restano fuori le zone aperte verso l'esterno e quelle sotto 0,6 m².
@@ -71,7 +72,7 @@ L'immagine viene portata a 1200 px sul lato lungo e passa per questi stadi:
 - Il raddrizzamento corregge solo la rotazione, non la prospettiva di una foto presa di sbieco, e sfoca un po' l'immagine: il riconoscimento può peggiorare.
 - La barra metrica viene riconosciuta solo se orizzontale; i numeri non vengono letti.
 - Il modello usa solo muri allineati agli assi: i muri obliqui vengono approssimati a gradini.
-- I muri a doppia linea sono il caso più debole e di solito richiedono correzioni a mano.
+- Nei disegni a doppia linea un tratto di muro resta vuoto se le due linee non si chiudono; le porte senza trattino catastale vengono proposte come «da controllare» e possono comparire falsi sulle scale.
 - Alcune aperture sfuggono o vengono classificate male (per esempio finestre con trattini inclinati): si correggono con un clic.
 - Il ricalcolo trova solo le stanze chiuse: se una stanza manca, chiudi il varco con «Aggiungi muro» e ricalcola.
 - La lettura dei PDF vettoriali con pdf.js non è stata verificata; è stato provato solo il percorso di ripiego con PDF scansionati.
