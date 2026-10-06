@@ -309,7 +309,7 @@ const PRE=[['Letto matrimoniale',160,200,45,[0.86,0.84,0.80]],['Letto singolo',9
 
 // ---------- stato del progetto corrente
 let ops=[],apo={},xops=[],selOp=null,odrag=null,odraw=null,userRooms=null,showModel=true,curWalls=[],curOps=[],clickOps=[],tool='mob',wdraw=null,meas=[],measPos=[],items=[],selId=null,nextId=1;
-let gridM=0.05;{const v=parseFloat(LS.get('pl-griglia'));if([1,5,10,25,50].indexOf(v)>=0)gridM=v/100;}const gs=v=>Math.round(v/gridM)*gridM; // passo della griglia per muri, demolizioni e aperture
+let gridM=0.05;{const v=parseFloat(LS.get('pl-griglia'));if([1,5,10,25,50].indexOf(v)>=0)gridM=v/100;}let GO=[0,0];const gs=(v,ax)=>GO[ax]+Math.round((v-GO[ax])/gridM)*gridM; // passo della griglia per muri, demolizioni e aperture
 let seen=new Set();const isDoubt=k=>k[0]!=='a'&&!!GEO.doubt&&GEO.doubt.indexOf(+k)>=0&&!seen.has(+k)&&!apo[k],doubtN=()=>clickOps.filter(q=>isDoubt(q.k)).length;
 const wkey=()=>P.id+'-muri',ikey=()=>P.id+'-mobili',akey=()=>P.id+'-aperture',rkey=()=>P.id+'-vani';
 const RPAL=[[0.88,0.78,0.56],[0.71,0.80,0.61],[0.60,0.76,0.83],[0.86,0.70,0.52],[0.77,0.70,0.81],[0.64,0.77,0.68],[0.79,0.71,0.62],[0.55,0.70,0.80],[0.85,0.74,0.74],[0.72,0.72,0.74]];
@@ -323,6 +323,7 @@ function saveA(){LS.set(akey(),JSON.stringify(apoOut()));touchRooms();}
 function saveW(){LS.set(wkey(),JSON.stringify(ops));touchRooms();}
 function save(){LS.set(ikey(),JSON.stringify(items.map(f=>({name:f.name,w:f.w,d:f.d,h:f.h,x:f.x,z:f.z,col:f.col}))));}
 function loadState(){
+  GO=[0,0];if(GEO.walls.length){let mx=1e9,mz=1e9;for(const q of GEO.walls){if(q[0]<mx)mx=q[0];if(q[1]<mz)mz=q[1];}GO=[mx,mz];} // la griglia parte dallo spigolo esterno in alto a sinistra della pianta
   seen=new Set();try{const v=JSON.parse(LS.get(P.id+'-viste')||'[]');if(Array.isArray(v))seen=new Set(v.filter(Number.isInteger));}catch(e){}
   ops=[];items=[];apo={};xops=[];selOp=null;odrag=null;odraw=null;userRooms=null;
   try{const sv=JSON.parse(LS.get(rkey())||'null');if(sv&&Array.isArray(sv.list)&&sv.list.every(isRoom))userRooms={list:sv.list.map(r=>Object.assign({},r,{name:r.name.slice(0,40)})),stale:!!sv.stale};}catch(e){}
@@ -361,13 +362,13 @@ function runOf(o,fax){const ax=fax==null?axisOf(o):fax,cx=1-ax,c0=o[cx],c1=o[cx+
 const OSTD={door:80,win:120,pf:120,gap:90};
 function opAtClick(g,w){const ax=(w[2]-w[0])>=(w[3]-w[1])?0:1,cx=1-ax,pr=w.slice(0,4);pr[ax]=g[ax]-0.005;pr[ax+2]=g[ax]+0.005;const run=runOf(pr,ax);let lo=run[0],hi=run[1];
   for(const q of curOps){if(Math.min(q[cx+2],w[cx+2])-Math.max(q[cx],w[cx])<=0.01)continue;if(q[ax+2]<=g[ax])lo=Math.max(lo,q[ax+2]);else if(q[ax]>=g[ax])hi=Math.min(hi,q[ax]);}
-  let want=Math.max(0.3,Math.min(9,(parseFloat($('owid').value)||OSTD[$('otype').value])/100));want=Math.max(Math.ceil(0.3/gridM-1e-9)*gridM,gs(want));const len=Math.min(want,hi-lo);if(len<0.3)return null;
-  const st=Math.max(lo,Math.min(hi-len,gs(g[ax]-len/2))),r=w.slice(0,4);r[ax]=st;r[ax+2]=st+len;return {r:r,cut:len<want-0.005};}
+  let want=Math.max(0.3,Math.min(9,(parseFloat($('owid').value)||OSTD[$('otype').value])/100));want=Math.max(Math.ceil(0.3/gridM-1e-9)*gridM,Math.round(want/gridM)*gridM);const len=Math.min(want,hi-lo);if(len<0.3)return null;
+  const st=Math.max(lo,Math.min(hi-len,gs(g[ax]-len/2,ax))),r=w.slice(0,4);r[ax]=st;r[ax+2]=st+len;return {r:r,cut:len<want-0.005};}
 function opRec(k,make){if(k[0]==='a')return xops[+k.slice(1)];if(!apo[k]&&make)apo[k]={};return apo[k];}
 function opTidy(k){if(k[0]==='a')return;const a=apo[k],g=GEO.ops[k];if(!a)return;if(a.t===g[4])delete a.t;if(a.r&&a.r.every((v,i)=>Math.abs(v-g[i])<0.002)){delete a.r;}if(!a.r)delete a.n;if(!Object.keys(a).length)delete apo[k];}
 function opSetRect(k,r){const a=opRec(k,true);a.r=r.map(v=>Math.round(v*1000)/1000);a.n=ops.length;opTidy(k);}
 function opDraw(){if(!odraw)return null;const a=odraw.a,b=odraw.b,w=odraw.w,ax=Math.abs(b[0]-a[0])>=Math.abs(b[1]-a[1])?0:1,cx=1-ax,r=[0,0,0,0];
-  const sn=v=>{for(const e of [w[ax],w[ax+2]])if(Math.abs(e-v)<0.08)return e;return gs(v);}; // prima gli estremi del muro, poi la griglia
+  const sn=v=>{for(const e of [w[ax],w[ax+2]])if(Math.abs(e-v)<0.08)return e;return gs(v,ax);}; // prima gli estremi del muro, poi la griglia
   r[ax]=sn(Math.min(a[ax],b[ax]));r[ax+2]=sn(Math.max(a[ax],b[ax]));r[cx]=w[cx];r[cx+2]=w[cx+2];return r;}
 function drawRect(){if(!wdraw)return null;const a=wdraw.a,b=wdraw.b;
   if(tool==='cut')return [Math.min(a[0],b[0]),Math.min(a[1],b[1]),Math.max(a[0],b[0]),Math.max(a[1],b[1])];
@@ -410,7 +411,11 @@ let showLabs=true;
 const selLab=document.createElement('div');selLab.className='lab';selLab.hidden=true;stage.appendChild(selLab);
 function eye(){const t=[cam.tx,0.8,cam.tz],cp=Math.cos(cam.pitch),dd=cam.dist*Math.max(1,1.45/(W/H));
   return {t:t,e:[t[0]+dd*cp*Math.sin(cam.yaw),t[1]+dd*Math.sin(cam.pitch),t[2]+dd*cp*Math.cos(cam.yaw)]};}
+// Con gli strumenti di disegno la vista è una pianta vera, senza prospettiva: muri, sfondo, griglia e cursore coincidono.
+const planView=()=>tool!=='mob',planHalf=()=>{const hh=cam.dist*Math.max(1,1.45/(W/H))*Math.tan(0.31);return [hh*W/H,hh];};
+function planM(){const hf=planHalf(),o=new Float32Array(16);o[0]=1/hf[0];o[12]=-cam.tx/hf[0];o[9]=-1/hf[1];o[13]=cam.tz/hf[1];o[6]=-1/60;o[15]=1;return o;}
 function ray(ev){const r=canvas.getBoundingClientRect(),nx=(ev.clientX-r.left)/r.width*2-1,ny=1-(ev.clientY-r.top)/r.height*2,c=eye(),e=c.e,t=c.t;
+  if(planView()){const hf=planHalf();return {o:[cam.tx+nx*hf[0],50,cam.tz-ny*hf[1]],d:[0,-1,0]};}
   let z=[e[0]-t[0],e[1]-t[1],e[2]-t[2]],l=Math.hypot(z[0],z[1],z[2]);z=z.map(v=>v/l);let x=[z[2],0,-z[0]];l=Math.hypot(x[0],x[2]);x=x.map(v=>v/l);
   const y=[z[1]*x[2]-z[2]*x[1],z[2]*x[0]-z[0]*x[2],z[0]*x[1]-z[1]*x[0]],th=Math.tan(0.31),a=nx*th*(r.width/r.height),b=ny*th;
   return {o:e,d:[-z[0]+x[0]*a+y[0]*b,-z[1]+x[1]*a+y[1]*b,-z[2]+x[2]*a+y[2]*b]};}
@@ -425,7 +430,7 @@ function draw(){
   const cw=Math.round(W*dpr),ch=Math.round(H*dpr);if(canvas.width!==cw||canvas.height!==ch){canvas.width=cw;canvas.height=ch;}
   gl.viewport(0,0,cw,ch);const bg=sceneColor();gl.clearColor(bg[0],bg[1],bg[2],1);gl.clear(gl.COLOR_BUFFER_BIT|gl.DEPTH_BUFFER_BIT);gl.enable(gl.DEPTH_TEST);
   const ce=eye(),t=ce.t,e=ce.e;
-  M=mul(persp(0.62,W/H,0.3,Math.max(120,cam.dist*3)),look(e,t));
+  M=planView()?planM():mul(persp(0.62,W/H,0.3,Math.max(120,cam.dist*3)),look(e,t));
   gl.useProgram(pr);gl.uniformMatrix4fv(uM,false,M);
   function bind(b){gl.bindBuffer(gl.ARRAY_BUFFER,b);gl.enableVertexAttribArray(aP);gl.enableVertexAttribArray(aN);gl.enableVertexAttribArray(aC);
     gl.vertexAttribPointer(aP,3,gl.FLOAT,false,40,0);gl.vertexAttribPointer(aN,3,gl.FLOAT,false,40,12);gl.vertexAttribPointer(aC,4,gl.FLOAT,false,40,24);}
@@ -450,7 +455,7 @@ function draw(){
   if(tool==='add'||tool==='cut'||tool==='ope'){const e=GEO.ext,p0=pj(0,0),p1=pj(1,0),ppm=p0&&p1?Math.hypot(p1[0]-p0[0],p1[1]-p0[1]):0;
     // il passo scelto se a schermo è leggibile, altrimenti un multiplo; ogni metro una linea più marcata
     let stp=gridM;for(const c of [0.05,0.1,0.25,0.5,1])if(stp*ppm<9&&c>stp)stp=c;if(stp*ppm>=9&&(e[0]+e[1])/stp<=900){const ln=(x0,z0,x1,z1,m)=>{const a=pj(x0,z0),b=pj(x1,z1);if(a&&b)sv+='<line class="'+(m?'gm':'g')+'" x1="'+a[0].toFixed(1)+'" y1="'+a[1].toFixed(1)+'" x2="'+b[0].toFixed(1)+'" y2="'+b[1].toFixed(1)+'"/>';},mj=v=>Math.abs(v-Math.round(v))<1e-6;
-      for(let i=0;i*stp<=e[0]+1e-6;i++){const v=i*stp;ln(v,0,v,e[1],mj(v));}for(let i=0;i*stp<=e[1]+1e-6;i++){const v=i*stp;ln(0,v,e[0],v,mj(v));}}}
+      for(let i=Math.ceil(-GO[0]/stp-1e-6);GO[0]+i*stp<=e[0]+1e-6;i++){const v=GO[0]+i*stp;ln(v,0,v,e[1],mj(i*stp));}for(let i=Math.ceil(-GO[1]/stp-1e-6);GO[1]+i*stp<=e[1]+1e-6;i++){const v=GO[1]+i*stp;ln(0,v,e[0],v,mj(i*stp));}}}
   for(const m of (wdraw&&tool==='mea'?meas.concat([wdraw]):meas)){const p=pj(m.a[0],m.a[1]),q=pj(m.b[0],m.b[1]);if(!p||!q)continue;
     const tx=num(Math.hypot(m.b[0]-m.a[0],m.b[1]-m.a[1]),2)+' m';measPos.push([p[0],p[1],q[0],q[1],tx]);
     sv+='<line x1="'+p[0].toFixed(1)+'" y1="'+p[1].toFixed(1)+'" x2="'+q[0].toFixed(1)+'" y2="'+q[1].toFixed(1)+'"/><circle cx="'+p[0].toFixed(1)+'" cy="'+p[1].toFixed(1)+'" r="3.5"/><circle cx="'+q[0].toFixed(1)+'" cy="'+q[1].toFixed(1)+'" r="3.5"/><text x="'+((p[0]+q[0])/2).toFixed(1)+'" y="'+((p[1]+q[1])/2-12).toFixed(1)+'">'+tx+'</text>';}
@@ -465,20 +470,21 @@ canvas.addEventListener('pointerdown',e=>{canvas.setPointerCapture(e.pointerId);
     if(tool==='ope'){const g=ground(e);odrag=null;odraw=null;if(!g)return;const hit=hitOp(g);
       if(hit){selOp=hit.k;if(isDoubt(hit.k)){seen.add(+hit.k);LS.set(P.id+'-viste',JSON.stringify([...seen]));}if(hit.o[4]!=='none'){const ax=axisOf(hit.o);odrag={k:hit.k,ax:ax,off:g[ax]-hit.o[ax],run:runOf(hit.o),len:hit.o[ax+2]-hit.o[ax],did:false};}opUi();build();req();return;}
       const w=wallAt(g);if(w)odraw={a:g.slice(),b:g.slice(),w:w.r};else if(selOp!==null){selOp=null;opUi();build();req();}return;}
-    if(tool!=='mob'){const g=ground(e);if(g){const ed=edges(),gr=tool==='mea'?100:1/gridM,a=[snap(g[0],ed.x,gr),snap(g[1],ed.z,gr)];wdraw={a:a,b:a.slice(),ed:ed,g:gr,th:Math.max(0.05,Math.min(0.6,(parseFloat($('wth').value)||10)/100))};}return;}
+    if(tool!=='mob'){const g=ground(e);if(g){const ed=edges(),gr=tool==='mea'?100:1/gridM,a=[snap(g[0],ed.x,gr,GO[0]),snap(g[1],ed.z,gr,GO[1])];wdraw={a:a,b:a.slice(),ed:ed,g:gr,th:Math.max(0.05,Math.min(0.6,(parseFloat($('wth').value)||10)/100))};}return;}
     const f=pick(e),g=ground(e);if(f){select(f.id);if(g)drag={f:f,ox:f.x-g[0],oz:f.z-g[1]};}}});
 function edges(){const x=[],z=[];for(const w of curWalls){x.push(w.r[0],w.r[2]);z.push(w.r[1],w.r[3]);}return {x:x,z:z};}
-function snap(v,arr,g){let b=null,bd=0.08;for(const q of arr){const d=Math.abs(q-v);if(d<bd){bd=d;b=q;}}return b===null?Math.round(v*(g||20))/(g||20):b;}
+function snap(v,arr,g,o){let b=null,bd=0.08;o=o||0;for(const q of arr){const d=Math.abs(q-v);if(d<bd){bd=d;b=q;}}return b===null?o+Math.round((v-o)*(g||20))/(g||20):b;}
 canvas.addEventListener('pointermove',e=>{const p=pts.get(e.pointerId);if(!p)return;const dx=e.clientX-p[0],dy=e.clientY-p[1];pts.set(e.pointerId,[e.clientX,e.clientY]);
   if(Math.hypot(e.clientX-dn[0],e.clientY-dn[1])>4)moved=true;
   if(tool==='ope'&&pts.size===1&&(odrag||odraw)){const g=ground(e);if(!g||!moved)return;
     if(odraw){odraw.b=g.slice();build();req();return;}
-    const o=opByKey(odrag.k);if(!o)return;const ax=odrag.ax,st=Math.max(odrag.run[0],Math.min(odrag.run[1]-odrag.len,gs(g[ax]-odrag.off)));
+    const o=opByKey(odrag.k);if(!o)return;const ax=odrag.ax,st=Math.max(odrag.run[0],Math.min(odrag.run[1]-odrag.len,gs(g[ax]-odrag.off,ax)));
     if(Math.abs(st-o[ax])>0.004){const r=o.slice(0,4);r[ax]=st;r[ax+2]=st+odrag.len;opSetRect(odrag.k,r);odrag.did=true;recompute();opUi();build();req();}return;}
-  if(wdraw&&pts.size===1){const g=ground(e);if(g){wdraw.b=[snap(g[0],wdraw.ed.x,wdraw.g),snap(g[1],wdraw.ed.z,wdraw.g)];if(tool!=='mea')build();req();}return;}
+  if(wdraw&&pts.size===1){const g=ground(e);if(g){wdraw.b=[snap(g[0],wdraw.ed.x,wdraw.g,GO[0]),snap(g[1],wdraw.ed.z,wdraw.g,GO[1])];if(tool!=='mea')build();req();}return;}
   if(drag&&pts.size===1){const g=ground(e);if(g){drag.f.x=Math.max(0,Math.min(GEO.ext[0],Math.round((g[0]+drag.ox)*20)/20));drag.f.z=Math.max(0,Math.min(GEO.ext[1],Math.round((g[1]+drag.oz)*20)/20));build();req();}return;}
   if(pts.size>=2){const a=[...pts.values()],d=Math.hypot(a[0][0]-a[1][0],a[0][1]-a[1][1]);if(pinch)cam.dist*=pinch/d;pinch=d;pan(dx/2,dy/2);}
   else if(e.shiftKey||e.buttons===2||e.buttons===4)pan(dx,dy);
+  else if(planView())pan(dx,dy);
   else{cam.yaw-=dx*0.006;cam.pitch+=dy*0.006;}
   clamp();req();});
 function up(e){pts.delete(e.pointerId);pinch=0;
@@ -508,7 +514,7 @@ hc.addEventListener('input',()=>{hcut=parseFloat(hc.value);ho.textContent=num(hc
 $('labels').addEventListener('change',e=>{showLabs=e.target.checked;req();});
 $('glass').addEventListener('change',e=>{showGlass=e.target.checked;build();req();});
 $('bgon').addEventListener('change',e=>{showBg=e.target.checked;req();});
-$('v3d').addEventListener('click',()=>{Object.assign(cam,HOME);req();});
+$('v3d').addEventListener('click',()=>{if(tool!=='mob')setTool('mob');Object.assign(cam,HOME);req();});
 $('vtop').addEventListener('click',()=>{Object.assign(cam,HOME,{yaw:0,pitch:1.55,dist:HOME.dist*0.93});req();});
 new ResizeObserver(req).observe(stage);
 window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change',req);
