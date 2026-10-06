@@ -19,9 +19,10 @@ Sotto compaiono i progetti già salvati in quel browser. Dentro un progetto il t
 Per importare una pianta:
 
 1. **Importa una pianta…** – scegli un'immagine, un PDF o un DXF.
-2. **Imposta la scala** – trascina una linea sull'anteprima lungo una misura nota e scrivi i centimetri, oppure dichiara la scala (1:100, 1:200…) e i dpi. Per i DXF la scala viene letta dalle unità del file.
-3. **Controlla l'anteprima** – i muri riconosciuti sono in rosso; soglia, spessore e modalità (muri pieni o a doppia linea) si possono regolare.
-4. **Crea il progetto** e correggi quello che il riconoscimento ha sbagliato con gli strumenti della pagina.
+2. **Ritaglia e raddrizza** (se serve) – «Ritaglia la pianta» e un rettangolo attorno alla sola pianta tolgono intestazione e legenda; «Raddrizza in automatico» o il campo «Rotazione» sistemano una pianta storta.
+3. **Imposta la scala** – trascina una linea sull'anteprima lungo una misura nota e scrivi i centimetri, oppure dichiara la scala (1:100, 1:200…) e i dpi. Per i DXF la scala viene letta dalle unità del file. Se nel disegno c'è una barra metrica a tratti uguali, la pagina la trova da sola e ipotizza 1 m per tratto: la lunghezza va controllata.
+4. **Controlla l'anteprima** – i muri riconosciuti sono in rosso, le aperture dal tipo o dalla larghezza incerti hanno un bordo arancione (nel progetto diventano viola nello strumento «Porte e finestre», finché non le tocchi); soglia, spessore e modalità (muri pieni o a doppia linea) si possono regolare.
+5. **Crea il progetto** e correggi quello che il riconoscimento ha sbagliato con gli strumenti della pagina.
 
 ## Funzioni
 
@@ -67,6 +68,8 @@ L'immagine viene portata a 1200 px sul lato lungo e passa per questi stadi:
 
 ## Limiti noti
 
+- Il raddrizzamento corregge solo la rotazione, non la prospettiva di una foto presa di sbieco, e sfoca un po' l'immagine: il riconoscimento può peggiorare.
+- La barra metrica viene riconosciuta solo se orizzontale; i numeri non vengono letti.
 - Il modello usa solo muri allineati agli assi: i muri obliqui vengono approssimati a gradini.
 - I muri a doppia linea sono il caso più debole e di solito richiedono correzioni a mano.
 - Alcune aperture sfuggono o vengono classificate male (per esempio finestre con trattini inclinati): si correggono con un clic.

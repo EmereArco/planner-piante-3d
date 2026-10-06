@@ -145,21 +145,26 @@ li{margin-bottom:5px}
 <section class="imp" id="imp" aria-labelledby="ih" hidden>
   <h2 id="ih">Importa una pianta da immagine, PDF o DXF</h2>
   <div class="impgrid">
-    <div class="pvbox"><canvas id="ipv" width="10" height="10" hidden aria-label="Anteprima della pianta con i muri riconosciuti in rosso"></canvas><div class="empty" id="iempty">Scegli una foto, una scansione, un PDF o un DXF della pianta: qui compare l'anteprima con i muri riconosciuti in rosso, le porte in verde, le finestre in blu e le scritte escluse in giallo.</div></div>
+    <div class="pvbox"><canvas id="ipv" width="10" height="10" hidden aria-label="Anteprima della pianta con i muri riconosciuti in rosso"></canvas><div class="empty" id="iempty">Scegli una foto, una scansione, un PDF o un DXF della pianta: qui compare l'anteprima con i muri riconosciuti in rosso, le porte in verde, le finestre in blu, le scritte escluse in giallo e le aperture da controllare con il bordo arancione.</div></div>
     <div class="steps">
       <fieldset><legend>1 · File</legend>
         <input id="ifile" type="file" accept="image/*,application/pdf,.pdf,.dxf" aria-label="File della pianta: immagine, PDF o DXF">
         <label for="ipage" id="ipagel" hidden>Pagina del PDF <input id="ipage" type="number" min="1" max="1" step="1" value="1"></label>
         <label for="iname">Nome del progetto <input id="iname" type="text" maxlength="40" value="Nuova pianta"></label>
       </fieldset>
-      <fieldset><legend>2 · Muri</legend>
+      <fieldset><legend>2 · Ritaglio e rotazione</legend>
+        <div class="row"><button id="icrop" type="button" aria-pressed="false" disabled>Ritaglia la pianta</button><button id="icropx" type="button" hidden>Togli il ritaglio</button></div>
+        <div class="row"><button id="iskew" type="button" disabled>Raddrizza in automatico</button><label for="irot">Rotazione <input id="irot" type="number" min="-45" max="45" step="0.1" value="0" disabled> °</label></div>
+        <p>Se nel file ci sono intestazione, legenda o altre piante, premi "Ritaglia la pianta" e trascina un rettangolo attorno alla sola pianta. Se è storta, raddrizzala: i muri devono risultare orizzontali e verticali.</p>
+      </fieldset>
+      <fieldset><legend>3 · Muri</legend>
         <label for="imode">Nel disegno i muri sono <select id="imode"><option value="fill">pieni (linee spesse o scure)</option><option value="hollow">a doppia linea (vuoti dentro)</option></select></label>
         <label for="ithr">Soglia del nero <input id="ithr" type="range" min="40" max="220" step="1" value="125"> <output id="ithro" for="ithr">125</output></label>
         <label for="ithk"><span id="ithkl">Spessore minimo</span> <input id="ithk" type="range" min="2" max="40" step="1" value="5"> <output id="ithko" for="ithk">5 px</output></label>
         <label for="itext"><input id="itext" type="checkbox" checked> Riconosci ed escludi le scritte</label>
         <p>Tipo di muri e cursori partono da valori scelti in automatico: regolali finché il rosso copre i muri. Le aperture trovate nei muri sono in verde (porte) e in blu (finestre). Quello che resta sbagliato lo correggi dopo, sul modello.</p>
       </fieldset>
-      <fieldset><legend>3 · Scala</legend>
+      <fieldset><legend>4 · Scala</legend>
         <label for="iscf" id="iscfl" hidden><input id="iscf" type="radio" name="isc" value="f"> Misure del file DXF</label>
         <div class="row" id="iscfrow" hidden><label for="iunit">Il disegno è in <select id="iunit"><option value="m">metri</option><option value="cm">centimetri</option><option value="mm">millimetri</option></select></label></div>
         <label for="iscm"><input id="iscm" type="radio" name="isc" value="m" checked> Misura nota</label>
@@ -272,7 +277,7 @@ function getProject(id){
   if(!g||!Array.isArray(g.walls)||!(g.w>0)||!(g.d>0))return null;
   const walls=g.walls.filter(r=>Array.isArray(r)&&r.length>=4&&r.slice(0,4).every(isFinite));
   return {id:id,name:meta.name,builtin:false,ht:(g.ht>=2&&g.ht<=5)?g.ht:2.7,img:typeof g.img==='string'&&g.img.indexOf('data:image/')===0?g.img:null,
-    geo:{walls:walls,rooms:(Array.isArray(g.rooms)?g.rooms:[]).filter(isRoom),ops:(Array.isArray(g.ops)?g.ops:[]).filter(o=>Array.isArray(o)&&o.length===5&&o.slice(0,4).every(isFinite)&&TYPES.indexOf(o[4])>=0&&o[4]!=='none'),parapets:(Array.isArray(g.parapets)?g.parapets:[]).filter(isRect),treads:(Array.isArray(g.treads)?g.treads:[]).filter(isRect),lift:[],ext:[g.w,g.d]}};
+    geo:{walls:walls,doubt:(Array.isArray(g.doubt)?g.doubt:[]).filter(v=>Number.isInteger(v)&&v>=0),rooms:(Array.isArray(g.rooms)?g.rooms:[]).filter(isRoom),ops:(Array.isArray(g.ops)?g.ops:[]).filter(o=>Array.isArray(o)&&o.length===5&&o.slice(0,4).every(isFinite)&&TYPES.indexOf(o[4])>=0&&o[4]!=='none'),parapets:(Array.isArray(g.parapets)?g.parapets:[]).filter(isRect),treads:(Array.isArray(g.treads)?g.treads:[]).filter(isRect),lift:[],ext:[g.w,g.d]}};
 }
 let P=BUILTIN,GEO=GEO0,HT=2.7;
 
@@ -301,6 +306,7 @@ const PRE=[['Letto matrimoniale',160,200,45,[0.86,0.84,0.80]],['Letto singolo',9
 
 // ---------- stato del progetto corrente
 let ops=[],apo={},xops=[],selOp=null,odrag=null,odraw=null,userRooms=null,showModel=true,curWalls=[],curOps=[],clickOps=[],tool='mob',wdraw=null,meas=[],measPos=[],items=[],selId=null,nextId=1;
+let seen=new Set();const isDoubt=k=>k[0]!=='a'&&!!GEO.doubt&&GEO.doubt.indexOf(+k)>=0&&!seen.has(+k)&&!apo[k],doubtN=()=>clickOps.filter(q=>isDoubt(q.k)).length;
 const wkey=()=>P.id+'-muri',ikey=()=>P.id+'-mobili',akey=()=>P.id+'-aperture',rkey=()=>P.id+'-vani';
 const RPAL=[[0.88,0.78,0.56],[0.71,0.80,0.61],[0.60,0.76,0.83],[0.86,0.70,0.52],[0.77,0.70,0.81],[0.64,0.77,0.68],[0.79,0.71,0.62],[0.55,0.70,0.80],[0.85,0.74,0.74],[0.72,0.72,0.74]];
 const isRect=r=>Array.isArray(r)&&r.length>=4&&r.slice(0,4).every(v=>typeof v==='number'&&isFinite(v));
@@ -313,6 +319,7 @@ function saveA(){LS.set(akey(),JSON.stringify(apoOut()));touchRooms();}
 function saveW(){LS.set(wkey(),JSON.stringify(ops));touchRooms();}
 function save(){LS.set(ikey(),JSON.stringify(items.map(f=>({name:f.name,w:f.w,d:f.d,h:f.h,x:f.x,z:f.z,col:f.col}))));}
 function loadState(){
+  seen=new Set();try{const v=JSON.parse(LS.get(P.id+'-viste')||'[]');if(Array.isArray(v))seen=new Set(v.filter(Number.isInteger));}catch(e){}
   ops=[];items=[];apo={};xops=[];selOp=null;odrag=null;odraw=null;userRooms=null;
   try{const sv=JSON.parse(LS.get(rkey())||'null');if(sv&&Array.isArray(sv.list)&&sv.list.every(isRoom))userRooms={list:sv.list.map(r=>Object.assign({},r,{name:r.name.slice(0,40)})),stale:!!sv.stale};}catch(e){}
   try{const sv=JSON.parse(LS.get(akey())||'null'),hv=v=>typeof v==='number'&&isFinite(v)&&v>=0&&v<=6,cl=(v,none)=>{if(!v||typeof v!=='object')return null;const o={};
@@ -371,7 +378,7 @@ function build(){
   if(userRooms||!P.builtin)for(const r of roomsNow()){const c=roomCol(r);for(const q of r.rects)box(O,q[0],q[1],q[2],q[3],0,0.006,c);}
   if(showModel)for(const w of curWalls)box(O,w.r[0],w.r[1],w.r[2],w.r[3],0,Math.min(w.h,h),WALL,h<w.h-0.01?CUT:WALL);
   const prv=tool==='mea'?null:drawRect();if(prv&&prv[2]-prv[0]>0.01&&prv[3]-prv[1]>0.01){if(tool==='cut')box(T,prv[0],prv[1],prv[2],prv[3],0,Math.min(HT,h)+0.03,[0.85,0.2,0.15],null,0.4);else box(T,prv[0],prv[1],prv[2],prv[3],0,Math.min(HT,h)+0.02,[0.1,0.55,0.5],null,0.6);}
-  if(tool==='ope'){for(const q of clickOps){const o=q.o,sl=q.k===selOp;box(T,o[0]-0.03,o[1]-0.03,o[2]+0.03,o[3]+0.03,0,Math.min(HT,h)+(sl?0.12:0.05),sl?[0.96,0.60,0.20]:TCOL[o[4]],null,sl?0.8:0.5);}
+  if(tool==='ope'){for(const q of clickOps){const o=q.o,sl=q.k===selOp;const db=!sl&&isDoubt(q.k);box(T,o[0]-0.03,o[1]-0.03,o[2]+0.03,o[3]+0.03,0,Math.min(HT,h)+(sl?0.12:0.05),sl?[0.96,0.60,0.20]:TCOL[o[4]],null,sl?0.8:0.5);if(db)box(T,o[0]-0.12,o[1]-0.12,o[2]+0.12,o[3]+0.12,0,Math.min(HT,h)+0.02,[0.70,0.25,0.85],null,0.75);}
     const nr=opDraw();if(nr&&nr[2]-nr[0]>0.01&&nr[3]-nr[1]>0.01)box(T,nr[0],nr[1],nr[2],nr[3],0,Math.min(HT,h)+0.14,TCOL[$('otype').value],null,0.75);}
   for(const q of GEO.treads.concat(GEO.lift)){ if(Math.abs(q[0]-q[2])>1e-6&&Math.abs(q[1]-q[3])>1e-6)continue;
     box(O,Math.min(q[0],q[2])-0.015,Math.min(q[1],q[3])-0.015,Math.max(q[0],q[2])+0.015,Math.max(q[1],q[3])+0.015,0,0.012,TREAD);}
@@ -446,7 +453,7 @@ const pts=new Map();let pinch=0,drag=null,moved=false,dn=[0,0];
 canvas.addEventListener('pointerdown',e=>{canvas.setPointerCapture(e.pointerId);pts.set(e.pointerId,[e.clientX,e.clientY]);pinch=0;moved=false;drag=null;dn=[e.clientX,e.clientY];
   if(pts.size===1&&!e.shiftKey&&e.button===0){
     if(tool==='ope'){const g=ground(e);odrag=null;odraw=null;if(!g)return;const hit=hitOp(g);
-      if(hit){selOp=hit.k;if(hit.o[4]!=='none'){const ax=axisOf(hit.o);odrag={k:hit.k,ax:ax,off:g[ax]-hit.o[ax],run:runOf(hit.o),len:hit.o[ax+2]-hit.o[ax],did:false};}opUi();build();req();return;}
+      if(hit){selOp=hit.k;if(isDoubt(hit.k)){seen.add(+hit.k);LS.set(P.id+'-viste',JSON.stringify([...seen]));}if(hit.o[4]!=='none'){const ax=axisOf(hit.o);odrag={k:hit.k,ax:ax,off:g[ax]-hit.o[ax],run:runOf(hit.o),len:hit.o[ax+2]-hit.o[ax],did:false};}opUi();build();req();return;}
       const w=wallAt(g);if(w)odraw={a:g.slice(),b:g.slice(),w:w.r};else if(selOp!==null){selOp=null;opUi();build();req();}return;}
     if(tool!=='mob'){const g=ground(e);if(g){const ed=edges(),gr=tool==='mea'?100:20,a=[snap(g[0],ed.x,gr),snap(g[1],ed.z,gr)];wdraw={a:a,b:a.slice(),ed:ed,g:gr,th:Math.max(0.05,Math.min(0.6,(parseFloat($('wth').value)||10)/100))};}return;}
     const f=pick(e),g=ground(e);if(f){select(f.id);if(g)drag={f:f,ox:f.x-g[0],oz:f.z-g[1]};}}});
@@ -573,7 +580,7 @@ $('edel').addEventListener('click',()=>{const o=selOp!==null?opByKey(selOp):null
   if(selOp[0]==='a'){const j=+selOp.slice(1),renum=ops=>ops;xops.splice(j,1);selOp=null;opCommit();$('toolhint').textContent='Apertura eliminata: il muro è stato richiuso.';return;}
   const a=opRec(selOp,true);if(o[4]==='none'){delete a.t;opTidy(selOp);opCommit('Apertura ripristinata.');}else{a.t='none';opCommit('Il muro è stato richiuso. Puoi ripristinarla da qui.');}});
 let armedW=false;const coarse=window.matchMedia('(pointer:coarse)').matches;
-function wallUi(){for(const k of ['mob','add','cut','ope','mea'])$('t-'+k).setAttribute('aria-pressed',tool===k?'true':'false');$('toolhint').textContent=HINTS[tool];opUi();
+function wallUi(){for(const k of ['mob','add','cut','ope','mea'])$('t-'+k).setAttribute('aria-pressed',tool===k?'true':'false');$('toolhint').textContent=HINTS[tool]+(tool==='ope'&&doubtN()?' Da controllare: '+doubtN()+' aperture con il bordo viola (tipo o larghezza incerti); toccale per verificarle.':'');opUi();
   $('wundo').disabled=!ops.length;$('wreset').disabled=!ops.length&&!Object.keys(apo).length&&!xops.length;$('wreset').textContent='Ripristina muri e aperture';$('mclear').disabled=!meas.length;armedW=false;$('areanote').hidden=!(roomsNow().length&&areasStale());canvas.style.cursor=tool==='mob'?'':'crosshair';
   $('hint').textContent=tool==='mob'?(coarse?'Un dito: ruota o sposta un mobile · Due dita: vista':'Trascina: ruota · Maiusc + trascina: sposta la vista · Rotella: zoom · Trascina un mobile: lo sposti'):(tool==='add'?'Trascina per disegnare un muro':tool==='mea'?'Trascina tra due punti per misurare':tool==='ope'?'Tocca o trascina su un muro: nuova apertura · Tocca un\'apertura: la modifichi':'Trascina un rettangolo sui muri da togliere')+(coarse?' · Due dita: sposta la vista':' · Maiusc + trascina: sposta la vista');}
 function setTool(k){tool=k;wdraw=null;odraw=null;odrag=null;if(k!=='ope')selOp=null;if(k!=='mob'){select(null);Object.assign(cam,{yaw:0,pitch:1.55,dist:Math.max(cam.dist,HOME.dist*0.7)});}wallUi();build();req();}
@@ -679,14 +686,14 @@ $('modon').addEventListener('change',e=>{showModel=e.target.checked;build();req(
 
 // ---------- salvataggio su file: progetto completo e DXF
 function slug(){return P.name.toLowerCase().normalize('NFD').replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/g,'')||'pianta';}
-function projectFile(){return {app:'planner-piante-3d',v:1,name:P.name,ht:HT,geo:{walls:GEO.walls,ops:GEO.ops,parapets:GEO.parapets,treads:GEO.treads,rooms:GEO.rooms.map(r=>({name:r.name,area:r.area,c:r.c,rects:r.rects,col:roomCol(r)})),w:GEO.ext[0],d:GEO.ext[1],img:P.img||null},
+function projectFile(){return {app:'planner-piante-3d',v:1,name:P.name,ht:HT,geo:{walls:GEO.walls,ops:GEO.ops,parapets:GEO.parapets,treads:GEO.treads,rooms:GEO.rooms.map(r=>({name:r.name,area:r.area,c:r.c,rects:r.rects,col:roomCol(r)})),doubt:GEO.doubt||[],w:GEO.ext[0],d:GEO.ext[1],img:P.img||null},
   muri:ops,aperture:apoOut(),mobili:items.map(f=>({name:f.name,w:f.w,d:f.d,h:f.h,x:f.x,z:f.z,col:f.col})),vani:userRooms};}
 function openProject(text){let o;try{o=JSON.parse(text);}catch(e){return 'Questo file non è un progetto salvato da questa pagina.';}
   const g=o&&o.geo;if(!o||o.app!=='planner-piante-3d'||!g||!Array.isArray(g.walls)||!(g.w>0)||!(g.d>0))return 'Questo file non è un progetto salvato da questa pagina.';
   const walls=g.walls.filter(isRect);if(!walls.length)return 'Il progetto non contiene muri.';
   const id='p'+Date.now().toString(36)+Math.floor(Math.random()*1296).toString(36);let name=(typeof o.name==='string'&&o.name.trim()?o.name.trim():'Progetto aperto').slice(0,40);{const used=q=>q===BUILTIN.name||index.some(p=>p.name===q),base=name.slice(0,30);for(let k=1;used(name);k++)name=base+(k>1?' (copia '+k+')':' (copia)');}
   const st={walls:walls.map(r=>r.slice(0,4)),ops:(Array.isArray(g.ops)?g.ops:[]).filter(q=>Array.isArray(q)&&q.length===5&&isRect(q)&&TYPES.indexOf(q[4])>=0),parapets:(Array.isArray(g.parapets)?g.parapets:[]).filter(isRect),treads:(Array.isArray(g.treads)?g.treads:[]).filter(isRect),
-    rooms:(Array.isArray(g.rooms)?g.rooms:[]).filter(isRoom),w:g.w,d:g.d,ht:(o.ht>=2&&o.ht<=5)?o.ht:2.7,img:typeof g.img==='string'&&g.img.indexOf('data:image/')===0?g.img:null};
+    rooms:(Array.isArray(g.rooms)?g.rooms:[]).filter(isRoom),doubt:(Array.isArray(g.doubt)?g.doubt:[]).filter(v=>Number.isInteger(v)&&v>=0),w:g.w,d:g.d,ht:(o.ht>=2&&o.ht<=5)?o.ht:2.7,img:typeof g.img==='string'&&g.img.indexOf('data:image/')===0?g.img:null};
   mem[id]=st;index.push({id:id,name:name});saveIndex();let full=LS.set('pl-'+id+'-geo',JSON.stringify(st));if(!full){const im=st.img;st.img=null;LS.set('pl-'+id+'-geo',JSON.stringify(st));st.img=im;}
   if(Array.isArray(o.muri))LS.set(id+'-muri',JSON.stringify(o.muri));if(o.aperture&&typeof o.aperture==='object')LS.set(id+'-aperture',JSON.stringify(o.aperture));
   if(Array.isArray(o.mobili))LS.set(id+'-mobili',JSON.stringify(o.mobili));if(o.vani&&Array.isArray(o.vani.list))LS.set(id+'-vani',JSON.stringify(o.vani));
@@ -718,7 +725,7 @@ function zipOne(name,text){ // archivio .zip con un solo file, senza compression
   v.setUint32(p,0x06054b50,true);v.setUint16(p+8,1,true);v.setUint16(p+10,1,true);v.setUint32(p+12,p-cd,true);v.setUint32(p+16,cd,true);return out;}
 
 // ---------- importazione: da immagine, PDF o DXF a muri, porte e finestre
-const imp={cv:null,w:0,h:0,f:1,norm:null,rects:[],ops:[],texts:[],line:null,busy:0,kind:'',unitPx:0,dpi:0,pdf:null,t1:3};
+const imp={cv:null,w:0,h:0,f:1,norm:null,rects:[],ops:[],texts:[],line:null,busy:0,kind:'',unitPx:0,dpi:0,pdf:null,t1:3,src0:null,meta:null,srcName:'',crop:null,rot:0,keep:0,bar:null,cropOn:false,sel:null};
 function integral(src,w,h){const I=new Int32Array((w+1)*(h+1));for(let y=0;y<h;y++){let s=0;const o=(y+1)*(w+1),p=y*(w+1),r=y*w;for(let x=0;x<w;x++){s+=src[r+x];I[o+x+1]=I[p+x+1]+s;}}return I;}
 function winSum(I,w,h,x0,y0,x1,y1){x0=Math.max(0,x0);y0=Math.max(0,y0);x1=Math.min(w,x1);y1=Math.min(h,y1);if(x1<=x0||y1<=y0)return 0;const W1=w+1;return I[y1*W1+x1]-I[y0*W1+x1]-I[y1*W1+x0]+I[y0*W1+x0];}
 function morph(src,w,h,a,b,full,ay,by){if(ay==null){ay=a;by=b;}const I=integral(src,w,h),out=new Uint8Array(w*h),need=(a+b+1)*(ay+by+1);
@@ -794,8 +801,9 @@ function toRects(mask,w,h,g){const gw=Math.ceil(w/g),gh=Math.ceil(h/g),cell=new 
       for(let yy=y;yy<y1;yy++)for(let k=x;k<x1;k++)cell[yy*gw+k]=0;out.push([x*g,y*g,Math.min(w,x1*g),Math.min(h,y1*g)]);}
   return out;}
 function findOpenings(mask,dark,w,h,k,mode,ink){ // interruzioni tra due tratti di muro allineati
-  const n=w*h,t0=mode==='fill'?k:Math.max(3,Math.round(k/2)),maxT=mode==='fill'?4*k+2:k+6,minRun=Math.max(8,Math.round(2.5*t0)),L=Math.min(320,45*t0),minGap=Math.max(12,3*t0),hl=L>>1;
-  const rr=runsHV(mask,w,h),rh=rr.rh,rv=rr.rv,found=[];
+  const n=w*h,t0=mode==='fill'?k:Math.max(3,Math.round(k/2)),rr=runsHV(mask,w,h),rh=rr.rh,rv=rr.rv,maxT=mode==='fill'?4*k+2:k+6;
+  const minRun=Math.max(8,Math.round(2.5*t0)),L=Math.min(320,45*t0),minGap=Math.max(12,3*t0),hl=L>>1;
+  const found=[];
   for(let dir=0;dir<2;dir++){const sel=new Uint8Array(n);for(let i=0;i<n;i++)if(mask[i]){const al=dir?rv[i]:rh[i],ac=dir?rh[i]:rv[i];if(al>=minRun&&ac<=maxT)sel[i]=1;}
     const clo=dir?morph(morph(sel,w,h,0,0,false,hl,hl),w,h,0,0,true,hl,hl):morph(morph(sel,w,h,hl,hl,false,0,0),w,h,hl,hl,true,0,0),gap=new Uint8Array(n);
     for(let i=0;i<n;i++)gap[i]=clo[i]&&!mask[i]?1:0;
@@ -823,11 +831,11 @@ function findOpenings(mask,dark,w,h,k,mode,ink){ // interruzioni tra due tratti 
     for(let a=a0+2;a<a0+o.len-2;a++){if(o.dir){oa+=outside(o.x0-d,a);ob+=outside(o.x1+d,a);}else{oa+=outside(a,o.y0-d);ob+=outside(a,o.y1+d);}}
     const ext=Math.max(oa,ob)>0.5*(o.len-4);
     if(nL===0&&o.len>11*o.th)continue; // vuoto lungo tra due muri: è una stanza, non una porta
-    let ty=ext&&nL>=2?'win':'door';
+    let ty=ext&&nL>=2?'win':'door',dq=Math.abs(Math.max(oa,ob)-0.5*(o.len-4))<0.2*(o.len-4); // dq: classificazione al limite
     if(ink&&ext){ // muri pieni: un vano verso l'esterno è una finestra; se sul lato interno è disegnata l'anta, una portafinestra
       const dp=Math.round(0.45*o.len),side=oa>=ob?1:-1;let n2=0;for(let a=a0+2;a<a0+o.len-2;a++)for(let q=d;q<dp;q++){const c=side>0?(o.dir?o.x1:o.y1)+q:(o.dir?o.x0:o.y0)-1-q,x=o.dir?c:a,y=o.dir?a:c;if(x>=0&&y>=0&&x<w&&y<h&&!mask[y*w+x]&&(ink[y*w+x]||dark[y*w+x]))n2++;}
-      ty=n2>=0.5*o.len?'pf':'win';o.ink=n2;}
-    res.push([o.x0,o.y0,o.x1,o.y1,ty]);}
+      ty=n2>=0.5*o.len?'pf':'win';if(n2>=0.25*o.len&&n2<1.0*o.len)dq=true;}
+    const op=[o.x0,o.y0,o.x1,o.y1,ty];if(dq)op.dq=true;res.push(op);}
   return {ops:res,walls:extra};}
 // tacche: il trattino sottile che nelle planimetrie catastali attraversa ogni porta e finestra
 function findTicks(dark,w,h,t1){const r=runsHV(dark,w,h),n=w*h,tmax=Math.max(3,Math.round(1.5*t1)+1),Lmin=22,Lmax=150,m=Math.max(4,tmax),D=(x,y)=>x>=0&&y>=0&&x<w&&y<h&&dark[y*w+x]?1:0,out=[];
@@ -859,8 +867,31 @@ function opsFromTicks(ticks,gaps,dark,w,h,t1){const D=(x,y)=>x>=0&&y>=0&&x<w&&y<
   // toglie i doppioni
   const out=[];for(const o of res){if(out.some(p=>Math.min(p[2],o[2])-Math.max(p[0],o[0])>0&&Math.min(p[3],o[3])-Math.max(p[1],o[1])>0))continue;out.push(o);}
   return out;}
+// apertura da controllare: tipo deciso al limite, oppure larghezza insolita per la scala impostata
+function doubtOf(o,s){if(o.dq)return true;if(!(s>0))return false;const l=Math.max(o[2]-o[0],o[3]-o[1])*s;return l<0.6||l>(o[4]==='door'?1.3:2.6);}
+// barra metrica: un segno lungo e basso, fuori dai muri, diviso in tratti uguali da tacche a tutta altezza
+function findBar(dark,w,h){const cc=components(dark,w,h),big=Math.max(w,h);let best=null;const eq=(g)=>{const sg=g.slice().sort((p,q)=>p-q),md=sg[sg.length>>1];return g.every(v=>Math.abs(v-md)<=0.18*md)?md:0;};
+  for(let i=0;i<cc.comps.length;i++){let c=cc.comps[i];if(c.bw<0.08*big||c.bh<4||c.bh>0.035*big||c.bw<7*c.bh)continue;
+    // righe quasi vuote in alto e in basso (le tacchette dei numeri) non contano per l'altezza della barra
+    const rs=y=>{let q=0;for(let x=0;x<c.bw;x++)q+=dark[(c.y0+y)*w+c.x0+x];return q;};let ya=0,yb=c.bh;while(ya<yb-3&&rs(ya)<0.2*c.bw)ya++;while(yb>ya+3&&rs(yb-1)<0.2*c.bw)yb--;const c0={bw:c.bw,bh:c.bh};c={x0:c.x0,y0:c.y0+ya,bw:c.bw,bh:yb-ya};
+    const col=x=>{let t=0,b=0;const hf=c.bh>>1;for(let y=0;y<c.bh;y++)if(dark[(c.y0+y)*w+c.x0+x]){if(y<hf)t++;else b++;}return [t,b];};let ar=0;for(let x=0;x<c.bw;x++){const v=col(x);ar+=v[0]+v[1];}if(ar>0.9*c.bw*c.bh)continue;
+    // (a) tacche a tutta altezza su una linea
+    const tk=[];let run=-1;for(let x=0;x<=c.bw;x++){const v=x<c.bw?col(x):[0,0],full=v[0]+v[1]>=0.75*c.bh;if(full&&run<0)run=x;if(!full&&run>=0){if(x-run<=Math.max(5,c.bh))tk.push((run+x-1)/2);run=-1;}}
+    let N=0,x0=0,x1=0;
+    if(tk.length>=3&&tk.length<=21){const g=[];for(let q=1;q<tk.length;q++)g.push(tk[q]-tk[q-1]);const md=eq(g);if(md>=2.5*c.bh){N=g.length;x0=tk[0];x1=tk[tk.length-1];}}
+    // (b) scacchi alternati sopra e sotto
+    if(!N){const runs=[];let cur=0,st=0;for(let x=0;x<=c.bw;x++){let k=0;if(x<c.bw){const v=col(x),hf=c.bh/2;k=v[0]>=0.3*hf&&v[0]>2*v[1]?1:v[1]>=0.3*hf&&v[1]>2*v[0]?2:0;}if(k!==cur){if(cur&&x-st>2)runs.push([cur,st,x]);cur=k;st=x;}}
+      if(runs.length>=3&&runs.length<=20&&runs.every((r,q)=>!q||(r[0]!==runs[q-1][0]&&r[1]-runs[q-1][2]<=3))){const md=eq(runs.map(r=>r[2]-r[1]));if(md>=2*c.bh){N=runs.length;x0=runs[0][1];x1=runs[runs.length-1][2];}}}
+    if(N&&(!best||x1-x0>best.sc))best={sc:x1-x0,n:N,x0:c.x0+x0,x1:c.x0+x1,y:c.y0+c.bh/2,box:[c.x0-3,cc.comps[i].y0-3,c.x0+c.bw+3,cc.comps[i].y0+c0.bh+3]};}
+  return best;}
+// inclinazione del disegno: l'angolo che allinea meglio i tratti scuri a righe e colonne
+function skewAngle(dark,w,h){const P=[],st=Math.max(1,Math.round(Math.sqrt(w*h/60000)));for(let y=0;y<h;y+=st)for(let x=0;x<w;x+=st)if(dark[y*w+x])P.push(x-w/2,y-h/2);if(P.length<400)return 0;
+  const D=Math.ceil(Math.hypot(w,h)/st)+4,score=a=>{const c=Math.cos(a),sn=Math.sin(a),hx=new Float64Array(D),hy=new Float64Array(D);for(let i=0;i<P.length;i+=2){const u=P[i]*c-P[i+1]*sn,v=P[i]*sn+P[i+1]*c;hx[Math.round(u/st+D/2)]++;hy[Math.round(v/st+D/2)]++;}let q=0;for(let i=0;i<D;i++)q+=hx[i]*hx[i]+hy[i]*hy[i];return q;};
+  let ba=0,bs=-1;for(let a=-12;a<=12.001;a+=0.5){const q=score(a*Math.PI/180);if(q>bs){bs=q;ba=a;}}const c0=ba;for(let a=c0-0.4;a<=c0+0.401;a+=0.1){const q=score(a*Math.PI/180);if(q>bs){bs=q;ba=a;}}
+  return Math.round(ba*10)/10;}
 function darkOf(tv){const n=imp.w*imp.h,thr=tv||+$('ithr').value,dark=new Uint8Array(n);for(let i=0;i<n;i++)dark[i]=imp.norm[i]<thr?1:0;return dark;}
 function analyze(){if(!imp.norm)return;const w=imp.w,h=imp.h,k=+$('ithk').value,mode=$('imode').value,dark=darkOf();
+  const bar=findBar(dark,w,h);if(bar){const q=bar.box;for(let y=Math.max(0,q[1]);y<Math.min(h,q[3]);y++)for(let x=Math.max(0,q[0]);x<Math.min(w,q[2]);x++)dark[y*w+x]=0;} // la barra metrica non è un muro
   imp.texts=$('itext').checked?findText(dark,w,h).boxes:[];
   const st=strokeStats(dark,w,h);st.t1=st.thick>=0.18?st.t1:st.tm;imp.t1=st.t1;
   let mask;if(mode==='fill'){const a=(k-1)>>1,b=k-1-a;mask=morph(morph(dark,w,h,a,b,true),w,h,b,a,false);}else mask=hollowWalls(dark,w,h,k);
@@ -877,22 +908,33 @@ function paintPreview(){const c=$('ipv');if(!imp.cv)return;const x=c.getContext(
   x.fillStyle='rgba(214,40,40,0.55)';for(const r of imp.rects)x.fillRect(r[0],r[1],r[2]-r[0],r[3]-r[1]);
   for(const o of imp.ops){x.fillStyle=o[4]==='door'?'rgba(20,150,60,0.75)':o[4]==='pf'?'rgba(0,170,200,0.8)':'rgba(20,90,220,0.75)';x.fillRect(o[0],o[1],o[2]-o[0],o[3]-o[1]);}
   if(imp.line){const l=imp.line,lw=Math.max(2,imp.w/350);x.strokeStyle='#0b62d6';x.fillStyle='#0b62d6';x.lineWidth=lw;x.beginPath();x.moveTo(l[0],l[1]);x.lineTo(l[2],l[3]);x.stroke();
-    for(const q of [[l[0],l[1]],[l[2],l[3]]]){x.beginPath();x.arc(q[0],q[1],lw*2,0,6.2832);x.fill();}}}
+    for(const q of [[l[0],l[1]],[l[2],l[3]]]){x.beginPath();x.arc(q[0],q[1],lw*2,0,6.2832);x.fill();}}
+  const sc=impScale(),lw2=Math.max(2,imp.w/450);x.strokeStyle='#f08a00';x.lineWidth=lw2;x.setLineDash([lw2*2.5,lw2*1.5]);for(const o of imp.ops)if(doubtOf(o,sc))x.strokeRect(o[0]-4,o[1]-4,o[2]-o[0]+8,o[3]-o[1]+8);x.setLineDash([]);
+  if(imp.sel){const r=imp.sel;x.fillStyle='rgba(11,98,214,0.12)';x.strokeStyle='#0b62d6';x.lineWidth=lw2;x.fillRect(r[0],r[1],r[2]-r[0],r[3]-r[1]);x.strokeRect(r[0],r[1],r[2]-r[0],r[3]-r[1]);}}
 const UNIT={m:1,cm:0.01,mm:0.001};
 function impScale(){ // metri per pixel dell'immagine di lavoro, oppure 0
   if($('iscf').checked)return imp.unitPx>0?imp.unitPx*(UNIT[$('iunit').value]||1)/imp.f:0;
-  if($('iscm').checked){const l=imp.line,cmv=parseFloat($('ilen').value);if(!l||!(cmv>0))return 0;const px=Math.hypot(l[2]-l[0],l[3]-l[1]);return px>5?cmv/100/px:0;}
+  if($('iscm').checked){const l=imp.line,cmv=parseFloat($('ilen').value);if(!l)return imp.keep>0?imp.keep/imp.f:0;if(!(cmv>0))return 0;const px=Math.hypot(l[2]-l[0],l[3]-l[1]);return px>5?cmv/100/px:0;}
   const N=parseFloat($('iscale').value),dpi=parseFloat($('idpi').value);if(!(N>0)||!(dpi>0))return 0;return N*0.0254/dpi/imp.f;}
 function impStatus(extra){const st=$('istat'),ok=$('iok');ok.disabled=true;
   if(!imp.cv){st.textContent=extra||'Nessun file caricato.';return;}
-  let t=imp.rects.length?'Muri trovati: '+imp.rects.length+' tratti, porte '+imp.ops.filter(o=>o[4]==='door').length+', finestre '+imp.ops.filter(o=>o[4]!=='door').length+(imp.texts.length?', scritte escluse '+imp.texts.length:'')+'.':'Nessun muro trovato: prova a cambiare soglia, spessore o tipo di muri.';
+  const s0=impScale(),nd=imp.ops.filter(o=>doubtOf(o,s0)).length;let t=imp.rects.length?'Muri trovati: '+imp.rects.length+' tratti, porte '+imp.ops.filter(o=>o[4]==='door').length+', finestre '+imp.ops.filter(o=>o[4]!=='door').length+(nd?', aperture da controllare '+nd+' (bordo arancione)':'')+(imp.texts.length?', scritte escluse '+imp.texts.length:'')+'.':'Nessun muro trovato: prova a cambiare soglia, spessore o tipo di muri.';
   const s=impScale();
   if(!s)t+=$('iscm').checked?(imp.line?' Scrivi la lunghezza in cm del tratto blu.':' Ora trascina sull\'anteprima lungo un tratto di lunghezza nota.'):' Indica la scala.';
-  else{const a=imp.w*s,b=imp.h*s;t+=' Ingombro: '+num(a,2)+' × '+num(b,2)+' m.';if(Math.max(a,b)<2||Math.max(a,b)>150)t+=' La scala sembra sbagliata: controlla misura e unità.';else if(imp.rects.length)ok.disabled=false;}
+  else{const a=imp.w*s,b=imp.h*s;t+=' Ingombro: '+num(a,2)+' × '+num(b,2)+' m.';if($('iscm').checked&&imp.bar&&imp.line)t+=' Scala presa dalla barra metrica: '+imp.bar+' tratti, ipotizzati da 1 m l\'uno. Controlla i cm.';else if($('iscm').checked&&!imp.line&&imp.keep>0)t+=' Scala mantenuta da prima del ritaglio.';if(Math.max(a,b)<2||Math.max(a,b)>150)t+=' La scala sembra sbagliata: controlla misura e unità.';else if(imp.rects.length)ok.disabled=false;}
   st.textContent=(extra?extra+' ':'')+t;}
 function scaleRows(){$('iscmrow').hidden=!$('iscm').checked;$('iscdrow').hidden=!$('iscd').checked;$('iscfrow').hidden=!$('iscf').checked;}
 // porta la sorgente (immagine, pagina PDF o DXF disegnato) alla risoluzione di lavoro e sceglie i valori iniziali
-function prepare(src,meta,name){const sw=src.naturalWidth||src.width,sh=src.naturalHeight||src.height,big=Math.max(sw,sh);if(big<60){impStatus('L\'immagine è troppo piccola.');return;}
+function prepare(src,meta,name){Object.assign(imp,{src0:src,meta:meta,srcName:name,crop:null,rot:0,keep:0,bar:null,sel:null,cropOn:false});$('irot').value='0';rebuildSrc(true);}
+function srcSize(){const s=imp.src0;return [s.naturalWidth||s.width,s.naturalHeight||s.height];}
+function rebuildSrc(first){if(!imp.src0)return;const sz=srcSize(),sw=sz[0],sh=sz[1];let keep=0;if(!first&&imp.cv){const s=$('iscm').checked?impScale():0;keep=s>0?s*imp.f:0;}
+  let src=imp.src0;
+  if(imp.rot||imp.crop){const c=document.createElement('canvas'),r=imp.crop||[0,0,sw,sh];c.width=Math.max(1,Math.round(r[2]-r[0]));c.height=Math.max(1,Math.round(r[3]-r[1]));const x=c.getContext('2d');x.fillStyle='#fff';x.fillRect(0,0,c.width,c.height);
+    x.imageSmoothingQuality='high';x.translate(-r[0],-r[1]);x.translate(sw/2,sh/2);x.rotate(imp.rot*Math.PI/180);x.drawImage(imp.src0,-sw/2,-sh/2,sw,sh);src=c;}
+  prepare0(src,imp.meta,first?imp.srcName:'',first);imp.keep=keep;
+  $('icrop').disabled=$('iskew').disabled=$('irot').disabled=!imp.cv;$('icropx').hidden=!imp.crop;$('icrop').setAttribute('aria-pressed','false');imp.cropOn=false;
+  if(!first){paintPreview();impStatus();}}
+function prepare0(src,meta,name,first){const sw=src.naturalWidth||src.width,sh=src.naturalHeight||src.height,big=Math.max(sw,sh);if(big<60){impStatus('L\'immagine è troppo piccola.');return;}
   const f=Math.min(2.5,1200/big),w=Math.max(1,Math.round(sw*f)),h=Math.max(1,Math.round(sh*f)),cv=document.createElement('canvas');cv.width=w;cv.height=h;
   const x=cv.getContext('2d');x.fillStyle='#fff';x.fillRect(0,0,w,h);x.imageSmoothingQuality='high';x.drawImage(src,0,0,w,h);const d=x.getImageData(0,0,w,h).data,n=w*h,g=new Uint8Array(n);
   for(let i=0;i<n;i++)g[i]=(d[i*4]*77+d[i*4+1]*150+d[i*4+2]*29)>>8;
@@ -902,19 +944,20 @@ function prepare(src,meta,name){const sw=src.naturalWidth||src.width,sh=src.natu
     const v=Math.min(255,Math.round(g[y*w+xx]/m*215));nm[y*w+xx]=v;hist[v]++;}
   let sum=0;for(let i=0;i<256;i++)sum+=i*hist[i];let sb=0,wb=0,best=0,thr=125;for(let i=0;i<256;i++){wb+=hist[i];if(!wb)continue;const wf=n-wb;if(!wf)break;sb+=i*hist[i];const mb=sb/wb,mf=(sum-sb)/wf,v=wb*wf*(mb-mf)*(mb-mf);if(v>best){best=v;thr=i;}}
   thr=Math.max(70,Math.min(170,thr));$('ithr').value=String(thr);$('ithro').textContent=String(thr);
-  Object.assign(imp,{cv:cv,w:w,h:h,f:f,norm:nm,rects:[],ops:[],texts:[],line:null,kind:meta.kind,unitPx:meta.unitPx||0,dpi:meta.dpi||0});
+  Object.assign(imp,{cv:cv,w:w,h:h,f:f,norm:nm,rects:[],ops:[],texts:[],line:null,bar:null,sel:null,kind:meta.kind,unitPx:meta.unitPx||0,dpi:meta.dpi||0});
   // tipo di muri e spessore di partenza, dallo spessore dei tratti del disegno
   const dk=darkOf();if($('itext').checked)findText(dk,w,h);const st=strokeStats(dk,w,h),fill=st.thick>=0.18;
   $('imode').value=fill?'fill':'hollow';$('ithkl').textContent=fill?'Spessore minimo':'Spessore massimo';
   let k=fill?Math.max(st.t1+1,Math.round((st.t1+st.tp)/2)):14;
   if(fill){ // le linee sottili sbiadite dal rimpicciolimento si vedono solo con una soglia più larga: servono a capire se i tratti più sottili del disegno sono tramezzi
-    const sl=strokeStats(darkOf(Math.min(200,thr+45)),w,h);imp.dbg=[st.t1,st.tp,sl.t1,sl.tp,+sl.thick.toFixed(2)];if(sl.t1<st.t1&&sl.thick>=0.18)k=Math.min(k,Math.max(sl.t1+2,Math.round((sl.t1+sl.tp)/2)));}if(!fill&&imp.unitPx>0){const s=imp.unitPx*(UNIT[$('iunit').value]||1)/f;if(s>0)k=Math.round(0.34/s);}
+    const sl=strokeStats(darkOf(Math.min(200,thr+45)),w,h);if(sl.t1<st.t1&&sl.thick>=0.18)k=Math.min(k,Math.max(sl.t1+2,Math.round((sl.t1+sl.tp)/2)));}if(!fill&&imp.unitPx>0){const s=imp.unitPx*(UNIT[$('iunit').value]||1)/f;if(s>0)k=Math.round(0.34/s);}
   k=Math.max(2,Math.min(40,k));$('ithk').value=String(k);$('ithko').textContent=k+' px';
   $('iscfl').hidden=!(imp.unitPx>0);if(imp.unitPx>0)$('iscf').checked=true;else if($('iscf').checked)$('iscm').checked=true;
   if(meta.dpi){$('idpi').value=String(Math.round(meta.dpi));if(meta.scaleN){$('iscale').value=String(meta.scaleN);$('iscd').checked=true;}}
   scaleRows();const pv=$('ipv');pv.width=w;pv.height=h;pv.hidden=false;$('iempty').hidden=true;
   if(name&&($('iname').value.trim()===''||$('iname').value==='Nuova pianta')){const b=name.replace(/\.[^.]+$/,'').replace(/[_-]+/g,' ').trim().slice(0,40);if(b)$('iname').value=b;}
-  analyze();if(meta.note)impStatus(meta.note);}
+  if(first&&!(imp.unitPx>0)&&!meta.scaleN){const b=findBar(darkOf(),w,h);if(b){imp.line=[b.x0,b.y,b.x1,b.y];imp.bar=b.n;$('ilen').value=String(b.n*100);$('iscm').checked=true;scaleRows();}}
+  analyze();if(meta.note&&first)impStatus(meta.note);}
 function loadImageUrl(url,meta,name,onfail){const im=new Image();im.onerror=()=>{if(onfail)onfail();else impStatus('Questo file non è un\'immagine leggibile dal browser (prova JPG o PNG).');};im.onload=()=>prepare(im,meta,name);im.src=url;}
 // DXF: legge linee, polilinee, archi e cerchi e li disegna come un'immagine al tratto
 function loadDxf(text,name){const L=text.split(/\r\n|\r|\n/),P=[];for(let i=0;i+1<L.length;i+=2){const c=parseInt(L[i],10);if(isNaN(c))continue;P.push([c,L[i+1].trim()]);}
@@ -974,27 +1017,36 @@ $('itext').addEventListener('change',schedule);
 $('imode').addEventListener('change',()=>{const hl=$('imode').value==='hollow';$('ithkl').textContent=hl?'Spessore massimo':'Spessore minimo';$('ithk').value=hl?'14':'5';$('ithko').textContent=$('ithk').value+' px';schedule();});
 for(const id of ['ilen','iscale','idpi','iunit'])$(id).addEventListener('input',()=>impStatus());
 for(const id of ['iscm','iscd','iscf'])$(id).addEventListener('change',()=>{scaleRows();impStatus();});
-(function(){const pv=$('ipv');let on=false;const pos=e=>{const r=pv.getBoundingClientRect();return [(e.clientX-r.left)*imp.w/r.width,(e.clientY-r.top)*imp.h/r.height];};
-  pv.addEventListener('pointerdown',e=>{if(!imp.cv||!$('iscm').checked)return;pv.setPointerCapture(e.pointerId);on=true;const p=pos(e);imp.line=[p[0],p[1],p[0],p[1]];paintPreview();});
-  pv.addEventListener('pointermove',e=>{if(!on)return;const p=pos(e);let dx=p[0]-imp.line[0],dy=p[1]-imp.line[1];
+(function(){const pv=$('ipv');let on=false,cr=null;const pos=e=>{const r=pv.getBoundingClientRect();return [Math.max(0,Math.min(imp.w,(e.clientX-r.left)*imp.w/r.width)),Math.max(0,Math.min(imp.h,(e.clientY-r.top)*imp.h/r.height))];};
+  pv.addEventListener('pointerdown',e=>{if(!imp.cv)return;if(imp.cropOn){pv.setPointerCapture(e.pointerId);cr=pos(e);imp.sel=[cr[0],cr[1],cr[0],cr[1]];paintPreview();return;}
+    if(!$('iscm').checked)return;pv.setPointerCapture(e.pointerId);on=true;const p=pos(e);imp.line=[p[0],p[1],p[0],p[1]];imp.bar=null;paintPreview();});
+  pv.addEventListener('pointermove',e=>{if(cr){const p=pos(e);imp.sel=[Math.min(cr[0],p[0]),Math.min(cr[1],p[1]),Math.max(cr[0],p[0]),Math.max(cr[1],p[1])];paintPreview();return;}
+    if(!on)return;const p=pos(e);let dx=p[0]-imp.line[0],dy=p[1]-imp.line[1];
     if(Math.abs(dy)<Math.abs(dx)*0.07)dy=0;else if(Math.abs(dx)<Math.abs(dy)*0.07)dx=0;imp.line[2]=imp.line[0]+dx;imp.line[3]=imp.line[1]+dy;paintPreview();});
-  const end=()=>{if(!on)return;on=false;if(Math.hypot(imp.line[2]-imp.line[0],imp.line[3]-imp.line[1])<6)imp.line=null;paintPreview();impStatus();};
+  const end=()=>{if(cr){cr=null;const r=imp.sel;imp.sel=null;
+      if(r&&r[2]-r[0]>=40&&r[3]-r[1]>=40){const o=imp.crop||[0,0],f=imp.f;imp.crop=[Math.round(o[0]+r[0]/f),Math.round(o[1]+r[1]/f),Math.round(o[0]+r[2]/f),Math.round(o[1]+r[3]/f)];rebuildSrc(false);}else{paintPreview();impStatus('Rettangolo troppo piccolo: trascina attorno a tutta la pianta.');}return;}
+    if(!on)return;on=false;if(Math.hypot(imp.line[2]-imp.line[0],imp.line[3]-imp.line[1])<6)imp.line=null;else imp.keep=0;paintPreview();impStatus();};
   pv.addEventListener('pointerup',end);pv.addEventListener('pointercancel',end);})();
+$('icrop').addEventListener('click',()=>{if(!imp.cv)return;imp.cropOn=!imp.cropOn;$('icrop').setAttribute('aria-pressed',imp.cropOn?'true':'false');$('ipv').style.cursor=imp.cropOn?'crosshair':'';if(imp.cropOn){impStatus('Trascina sull\'anteprima un rettangolo attorno alla sola pianta.');$('ipv').scrollIntoView({block:'nearest'});}else impStatus();});
+$('icropx').addEventListener('click',()=>{imp.crop=null;rebuildSrc(false);});
+function setRot(a){a=Math.max(-45,Math.min(45,Math.round(a*10)/10))||0;if(a===imp.rot)return;imp.rot=a;$('irot').value=String(a);rebuildSrc(false);}
+$('irot').addEventListener('change',()=>setRot(parseFloat($('irot').value)||0));
+$('iskew').addEventListener('click',()=>{if(!imp.norm)return;const a=skewAngle(darkOf(),imp.w,imp.h);if(Math.abs(a)<0.15){impStatus('La pianta è già dritta.');return;}setRot(imp.rot+a);impStatus('Pianta ruotata di '+num(a,1)+'°.');});
 function closeImport(){$('imp').hidden=true;$('pimp').disabled=false;}
 $('pimp').addEventListener('click',()=>{$('imp').hidden=false;$('pimp').disabled=true;$('pmsg').textContent='';impStatus();$('imp').scrollIntoView({block:'start',behavior:'auto'});});
 $('icancel').addEventListener('click',closeImport);
 $('iok').addEventListener('click',()=>{const s=impScale();if(!s||!imp.cv||!imp.rects.length)return;
   const r3=v=>Math.round(v*1000)/1000,opx=imp.ops.filter(o=>{const l=Math.max(o[2]-o[0],o[3]-o[1])*s;return l>=0.4&&l<=4;});
   let wr=imp.rects;for(const o of opx){const nx=[];for(const r of wr)for(const q of sub(r,o))nx.push(q);wr=nx;} // i muri lasciano posto alle aperture
-  const walls=wr.map(r=>[r3(r[0]*s),r3(r[1]*s),r3(r[2]*s),r3(r[3]*s)]).filter(r=>r[2]-r[0]>0.004&&r[3]-r[1]>0.004),opn=opx.map(o=>[r3(o[0]*s),r3(o[1]*s),r3(o[2]*s),r3(o[3]*s),o[4]]);
+  const walls=wr.map(r=>[r3(r[0]*s),r3(r[1]*s),r3(r[2]*s),r3(r[3]*s)]).filter(r=>r[2]-r[0]>0.004&&r[3]-r[1]>0.004),opn=opx.map(o=>[r3(o[0]*s),r3(o[1]*s),r3(o[2]*s),r3(o[3]*s),o[4]]),doubt=[];opx.forEach((o,i)=>{if(doubtOf(o,s))doubt.push(i);});
   let ht=parseFloat($('iht').value)/100;if(!(ht>=2&&ht<=5))ht=2.7;
   const id='p'+Date.now().toString(36)+Math.floor(Math.random()*1296).toString(36),name=$('iname').value.trim().slice(0,40)||'Nuova pianta';
   let img=null;try{img=imp.cv.toDataURL('image/jpeg',0.78);}catch(e){}
-  const g={walls:walls,ops:opn,w:r3(imp.w*s),d:r3(imp.h*s),ht:ht,img:img};mem[id]=g;index.push({id:id,name:name});saveIndex();
-  let msg='Progetto creato: controlla muri e aperture sulla pianta di sfondo e correggili con gli strumenti a fianco.';
+  const g={walls:walls,ops:opn,doubt:doubt,w:r3(imp.w*s),d:r3(imp.h*s),ht:ht,img:img};mem[id]=g;index.push({id:id,name:name});saveIndex();
+  let msg='Progetto creato: controlla muri e aperture sulla pianta di sfondo e correggili con gli strumenti a fianco.'+(doubt.length?' Con "Porte e finestre" trovi segnate in viola '+doubt.length+' aperture da controllare.':'');
   if(!LS.set('pl-'+id+'-geo',JSON.stringify(g))){g.img=null;if(LS.set('pl-'+id+'-geo',JSON.stringify(g))){g.img=img;msg='Progetto creato. Nel browser non c\'era spazio per l\'immagine: al prossimo caricamento resteranno i muri ma non la pianta di sfondo.';}
     else{g.img=img;msg='Progetto creato, ma il browser non ha spazio per salvarlo: resterà disponibile solo finché tieni aperta questa pagina.';}}
-  closeImport();$('ifile').value='';Object.assign(imp,{cv:null,norm:null,rects:[],ops:[],texts:[],line:null,pdf:null,unitPx:0});$('ipv').hidden=true;$('iempty').hidden=false;$('iname').value='Nuova pianta';$('ilen').value='';$('ipagel').hidden=true;
+  closeImport();$('ifile').value='';Object.assign(imp,{cv:null,norm:null,rects:[],ops:[],texts:[],line:null,pdf:null,unitPx:0,src0:null,crop:null,rot:0,keep:0,bar:null});$('icrop').disabled=$('iskew').disabled=$('irot').disabled=true;$('icropx').hidden=true;$('irot').value='0';$('ipv').hidden=true;$('iempty').hidden=false;$('iname').value='Nuova pianta';$('ilen').value='';$('ipagel').hidden=true;
   loadProject(id,msg);$('ptitle').scrollIntoView({block:'start',behavior:'auto'});});
 
 // ---------- avvio
