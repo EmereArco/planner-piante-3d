@@ -605,6 +605,7 @@ const NOTES_IMPORT=['Muri, porte e finestre sono stati riconosciuti automaticame
  'Porte e finestre sono riconosciute dalla tacca che le attraversa nelle planimetrie catastali; dove le tacche mancano, come interruzioni tra due tratti di muro allineati. Il tipo è una stima: con lo strumento "Porte e finestre" tocchi un\'apertura per cambiarla in porta, finestra, portafinestra, varco aperto o muro pieno.',
  'Un\'apertura può sfuggire, o un semplice vuoto tra due muri può essere preso per una porta: con "Porte e finestre" ne aggiungi di nuove trascinando lungo un muro, le sposti, le allarghi o le elimini. Porte a 2,10 m, davanzali a 0,90 m e architravi a 2,40 m sono i valori di partenza, modificabili per ogni apertura.',
  'Le scritte vengono riconosciute dalla forma (gruppi di piccoli segni allineati) ed escluse; non vengono lette. Una scritta attaccata a un muro, un retino o un arredo possono ancora essere scambiati per muri, soprattutto quando i muri sono a doppia linea.',
+ 'Nei disegni a muri pieni vengono tenuti anche i tramezzi sottili, purché più spessi delle linee di arredi, scale e ante. Cornice del foglio, frecce, simbolo del nord e legenda vengono scartati. Un vano verso l\'esterno diventa finestra, o portafinestra se è disegnata l\'anta: controlla quelli dei bagni, dove i sanitari possono ingannare.',
  'I muri obliqui o curvi sono resi a gradini. Se l\'immagine è storta o fotografata di sbieco, conviene raddrizzarla prima di importarla.',
  'Tutte le misure dipendono dalla scala che hai impostato durante l\'importazione. Controllane una con lo strumento "Misura".',
  'Le stanze non vengono riconosciute da sole: premi "Ricalcola le stanze" quando muri e aperture sono a posto. Una stanza viene trovata solo se è chiusa tutto intorno da muri, porte o finestre.',
@@ -769,12 +770,35 @@ function findText(dark,w,h){const cc=components(dark,w,h),C=[],Hmax=Math.round(M
   if(ids.size)for(let i=0;i<w*h;i++){const l=cc.lab[i];if(l&&ids.has(l-1))dark[i]=0;}
   return {ids:ids,boxes:boxes};}
 function strokeStats(dark,w,h){const r=runsHV(dark,w,h),hist=new Float64Array(41);let tot=0;for(let i=0;i<w*h;i++)if(dark[i]){hist[Math.min(40,Math.min(r.rh[i],r.rv[i]))]++;tot++;}
-  let t1=2,b=0;for(let t=1;t<=12;t++)if(hist[t]>b){b=hist[t];t1=t;}const lim=Math.ceil(1.8*t1+1);let thick=0,t2=lim,b2=0;for(let t=lim;t<=40;t++){thick+=hist[t];if(hist[t]>b2){b2=hist[t];t2=t;}}
-  return {t1:t1,t2:t2,thick:tot?thick/tot:0};}
+  if(!tot)return {t1:2,t2:6,tp:6,thick:0};for(let t=0;t<=40;t++)hist[t]/=tot;
+  // t1: spessore delle linee sottili (il primo spessore ben rappresentato, non il più frequente: nei disegni a muri pieni il più frequente è il muro)
+  let mx=0,tm=2;for(let t=1;t<=12;t++)if(hist[t]>mx){mx=hist[t];tm=t;}let t1=2;for(let t=1;t<=12;t++)if(hist[t]>=Math.max(0.04,0.25*mx)){t1=t;break;}
+  const lim=Math.ceil(1.8*t1+1);let thick=0,t2=lim,b2=0,tp=0;for(let t=lim;t<=40;t++){thick+=hist[t];if(hist[t]>b2){b2=hist[t];t2=t;}if(!tp&&hist[t]>=0.04)tp=t;}
+  return {t1:t1,tm:tm,t2:t2,tp:tp||t2,thick:thick};} // tm: spessore più frequente // tp: il muro pieno più sottile (i tramezzi)
 function hollowWalls(dark,w,h,T){ // chiude lo spazio tra due linee vicine, poi toglie le linee isolate e le macchie troppo spesse per essere muri
   const n=w*h,c=Math.ceil(T/2),clo=morph(morph(dark,w,h,c,c,false),w,h,c,c,true),sm=T<16?1:2,op=morph(morph(clo,w,h,sm,sm,true),w,h,sm,sm,false),
     kk=c+2,tk=morph(morph(clo,w,h,kk,kk,true),w,h,kk+1,kk+1,false),m=new Uint8Array(n);
   for(let i=0;i<n;i++)m[i]=op[i]&&!tk[i]?1:0;return m;}
+// Muri pieni: toglie la cornice del foglio, i simboli (frecce, nord) e ciò che è staccato dall'edificio (legenda, scala grafica).
+function cleanFill(mask,w,h){const n=w*h,big=Math.max(w,h);let cc=components(mask,w,h);const kill=new Uint8Array(cc.comps.length+1),bm=0.04;
+  cc.comps.forEach((c,i)=>{
+    if(c.bw>=0.85*w&&c.bh>=0.85*h){const mx=Math.round(c.bw*0.07),my=Math.round(c.bh*0.07);let ins=0;for(let y=c.y0+my;y<c.y0+c.bh-my;y++)for(let x=c.x0+mx;x<c.x0+c.bw-mx;x++)if(cc.lab[y*w+x]===i+1)ins++;if(ins<0.1*c.area)kill[i+1]=1;}
+    else if((c.bw>=0.85*w&&c.bh<0.03*h&&(c.y0+c.bh<bm*h||c.y0>(1-bm)*h))||(c.bh>=0.85*h&&c.bw<0.03*w&&(c.x0+c.bw<bm*w||c.x0>(1-bm)*w)))kill[i+1]=1;});
+  for(let i=0;i<n;i++)if(kill[cc.lab[i]])mask[i]=0;
+  const R=Math.round(0.05*big),dil=morph(mask,w,h,R,R,false),dc=components(dil,w,h);if(dc.comps.length>1){const cnt=new Float64Array(dc.comps.length+1);for(let i=0;i<n;i++)if(mask[i])cnt[dc.lab[i]]++;
+    let b=1;for(let i=2;i<cnt.length;i++)if(cnt[i]>cnt[b])b=i;
+    cc=components(mask,w,h);const far=new Uint8Array(cc.comps.length+1);cc.comps.forEach((c,i)=>{if(Math.max(c.bw,c.bh)<0.08*big&&dc.lab[(c.y0+(c.bh>>1))*w+c.x0+(c.bw>>1)]!==b)far[i+1]=1;});
+    for(let i=0;i<n;i++)if(far[cc.lab[i]])mask[i]=0;}
+  return mask;}
+// Simboli pieni (frecce, nord): pezzi piccoli, di forma non rettangolare, che nessuna apertura collega a un muro.
+function dropSymbols(mask,w,h,ops){const n=w*h,big=Math.max(w,h),cc=components(mask,w,h),kill=new Uint8Array(cc.comps.length+1);let any=false;
+  cc.comps.forEach((c,i)=>{if(Math.max(c.bw,c.bh)>=0.06*big||c.area>=0.72*c.bw*c.bh)return;const x0=c.x0-3,y0=c.y0-3,x1=c.x0+c.bw+3,y1=c.y0+c.bh+3;
+    const tch=ops.filter(o=>o[0]<x1&&o[2]>x0&&o[1]<y1&&o[3]>y0);if(tch.length<2){kill[i+1]=1;any=true;for(const o of tch)o.dead=true;}}); // un muro vero tra due aperture ne tocca due
+  if(any)for(let i=0;i<n;i++)if(kill[cc.lab[i]])mask[i]=0;return any;}
+function faintInk(g,w,h,mask){const n=w*h,t=new Uint8Array(n),mx=new Uint8Array(n),R=3,out=new Uint8Array(n),near=morph(mask,w,h,2,2,false);
+  for(let y=0;y<h;y++)for(let x=0;x<w;x++){let m=0;for(let q=Math.max(0,x-R);q<=Math.min(w-1,x+R);q++){const v=g[y*w+q];if(v>m)m=v;}t[y*w+x]=m;}
+  for(let y=0;y<h;y++)for(let x=0;x<w;x++){let m=0;for(let q=Math.max(0,y-R);q<=Math.min(h-1,y+R);q++){const v=t[q*w+x];if(v>m)m=v;}mx[y*w+x]=m;}
+  for(let i=0;i<n;i++)out[i]=!near[i]&&mx[i]-g[i]>=9?1:0;return out;}
 function dropSmall(mask,w,h,minLong){const cc=components(mask,w,h);for(let i=0;i<w*h;i++){const l=cc.lab[i];if(l&&Math.max(cc.comps[l-1].bw,cc.comps[l-1].bh)<minLong)mask[i]=0;}return mask;}
 function toRects(mask,w,h,g){const gw=Math.ceil(w/g),gh=Math.ceil(h/g),cell=new Uint8Array(gw*gh),I=integral(mask,w,h);
   for(let y=0;y<gh;y++)for(let x=0;x<gw;x++){const x1=Math.min(w,(x+1)*g),y1=Math.min(h,(y+1)*g);if(winSum(I,w,h,x*g,y*g,x1,y1)*2>=(x1-x*g)*(y1-y*g))cell[y*gw+x]=1;}
@@ -782,7 +806,7 @@ function toRects(mask,w,h,g){const gw=Math.ceil(w/g),gh=Math.ceil(h/g),cell=new 
       for(;y1<gh;y1++){let ok=true;for(let k=x;k<x1;k++)if(!cell[y1*gw+k]){ok=false;break;}if(!ok)break;}
       for(let yy=y;yy<y1;yy++)for(let k=x;k<x1;k++)cell[yy*gw+k]=0;out.push([x*g,y*g,Math.min(w,x1*g),Math.min(h,y1*g)]);}
   return out;}
-function findOpenings(mask,dark,w,h,k,mode){ // interruzioni tra due tratti di muro allineati
+function findOpenings(mask,dark,w,h,k,mode,ink){ // interruzioni tra due tratti di muro allineati
   const n=w*h,t0=mode==='fill'?k:Math.max(3,Math.round(k/2)),maxT=mode==='fill'?4*k+2:k+6,minRun=Math.max(8,Math.round(2.5*t0)),L=Math.min(320,45*t0),minGap=Math.max(12,3*t0),hl=L>>1;
   const rr=runsHV(mask,w,h),rh=rr.rh,rv=rr.rv,found=[];
   for(let dir=0;dir<2;dir++){const sel=new Uint8Array(n);for(let i=0;i<n;i++)if(mask[i]){const al=dir?rv[i]:rh[i],ac=dir?rh[i]:rv[i];if(al>=minRun&&ac<=maxT)sel[i]=1;}
@@ -794,8 +818,9 @@ function findOpenings(mask,dark,w,h,k,mode){ // interruzioni tra due tratti di m
   if(!found.length||found.length>400)return {ops:[],walls:[]};
   const bar=new Uint8Array(n),free=new Uint8Array(n);for(let i=0;i<n;i++)bar[i]=mask[i];
   for(const o of found)for(let y=o.y0;y<o.y1;y++)for(let x=o.x0;x<o.x1;x++)bar[y*w+x]=1;
-  for(let i=0;i<n;i++)free[i]=bar[i]?0:1;const cc=components(free,w,h),outside=(x,y)=>{if(x<0||y<0||x>=w||y>=h)return 1;const l=cc.lab[y*w+x];return l&&cc.comps[l-1].border?1:0;};
-  const isDark=(x,y)=>x>=0&&y>=0&&x<w&&y<h&&dark[y*w+x]?1:0,med=v=>{v.sort((p,q)=>p-q);return v[v.length>>1];};
+  const barS=ink?morph(bar,w,h,2,2,false):bar; // muri pieni: chiude le fessure sottili (filigrane, graffi) prima di cercare l'esterno
+  for(let i=0;i<n;i++)free[i]=barS[i]?0:1;const cc=components(free,w,h),outside=(x,y)=>{if(x<0||y<0||x>=w||y>=h)return 1;const l=cc.lab[y*w+x];return l&&cc.comps[l-1].border?1:0;};
+  const isDark=(x,y)=>x>=0&&y>=0&&x<w&&y<h&&(dark[y*w+x]||(ink&&ink[y*w+x]))?1:0,med=v=>{v.sort((p,q)=>p-q);return v[v.length>>1];};
   const res=[],extra=[],thinMax=Math.max(6,t0+2);
   // due interruzioni parallele e sovrapposte (le due facce di un muro disegnato vuoto) sono una finestra
   for(let i=0;i<found.length;i++){const p=found[i];if(p.used||p.th>thinMax)continue;for(let j=0;j<found.length;j++){const q=found[j];if(i===j||q.used||q.dir!==p.dir||q.th>thinMax)continue;
@@ -811,7 +836,11 @@ function findOpenings(mask,dark,w,h,k,mode){ // interruzioni tra due tratti di m
     for(let a=a0+2;a<a0+o.len-2;a++){if(o.dir){oa+=outside(o.x0-d,a);ob+=outside(o.x1+d,a);}else{oa+=outside(a,o.y0-d);ob+=outside(a,o.y1+d);}}
     const ext=Math.max(oa,ob)>0.5*(o.len-4);
     if(nL===0&&o.len>11*o.th)continue; // vuoto lungo tra due muri: è una stanza, non una porta
-    res.push([o.x0,o.y0,o.x1,o.y1,ext&&nL>=2?'win':'door']);}
+    let ty=ext&&nL>=2?'win':'door';
+    if(ink&&ext){ // muri pieni: un vano verso l'esterno è una finestra; se sul lato interno è disegnata l'anta, una portafinestra
+      const dp=Math.round(0.45*o.len),side=oa>=ob?1:-1;let n2=0;for(let a=a0+2;a<a0+o.len-2;a++)for(let q=d;q<dp;q++){const c=side>0?(o.dir?o.x1:o.y1)+q:(o.dir?o.x0:o.y0)-1-q,x=o.dir?c:a,y=o.dir?a:c;if(x>=0&&y>=0&&x<w&&y<h&&!mask[y*w+x]&&(ink[y*w+x]||dark[y*w+x]))n2++;}
+      ty=n2>=0.5*o.len?'pf':'win';o.ink=n2;}
+    res.push([o.x0,o.y0,o.x1,o.y1,ty]);}
   return {ops:res,walls:extra};}
 // tacche: il trattino sottile che nelle planimetrie catastali attraversa ogni porta e finestra
 function findTicks(dark,w,h,t1){const r=runsHV(dark,w,h),n=w*h,tmax=Math.max(3,Math.round(1.5*t1)+1),Lmin=22,Lmax=150,m=Math.max(4,tmax),D=(x,y)=>x>=0&&y>=0&&x<w&&y<h&&dark[y*w+x]?1:0,out=[];
@@ -843,21 +872,23 @@ function opsFromTicks(ticks,gaps,dark,w,h,t1){const D=(x,y)=>x>=0&&y>=0&&x<w&&y<
   // toglie i doppioni
   const out=[];for(const o of res){if(out.some(p=>Math.min(p[2],o[2])-Math.max(p[0],o[0])>0&&Math.min(p[3],o[3])-Math.max(p[1],o[1])>0))continue;out.push(o);}
   return out;}
-function darkOf(){const n=imp.w*imp.h,thr=+$('ithr').value,dark=new Uint8Array(n);for(let i=0;i<n;i++)dark[i]=imp.norm[i]<thr?1:0;return dark;}
+function darkOf(tv){const n=imp.w*imp.h,thr=tv||+$('ithr').value,dark=new Uint8Array(n);for(let i=0;i<n;i++)dark[i]=imp.norm[i]<thr?1:0;return dark;}
 function analyze(){if(!imp.norm)return;const w=imp.w,h=imp.h,k=+$('ithk').value,mode=$('imode').value,dark=darkOf();
   imp.texts=$('itext').checked?findText(dark,w,h).boxes:[];
-  const st=strokeStats(dark,w,h);imp.t1=st.t1;
+  const st=strokeStats(dark,w,h);st.t1=st.thick>=0.18?st.t1:st.tm;imp.t1=st.t1;
   let mask;if(mode==='fill'){const a=(k-1)>>1,b=k-1-a;mask=morph(morph(dark,w,h,a,b,true),w,h,b,a,false);}else mask=hollowWalls(dark,w,h,k);
-  mask=dropSmall(mask,w,h,Math.max(12,k*4));imp.rects=toRects(mask,w,h,Math.max(1,Math.round(k/4)));if(imp.rects.length>6000)imp.rects=[];
+  mask=dropSmall(mask,w,h,Math.max(12,k*4));if(mode==='fill')cleanFill(mask,w,h);const gr=Math.max(1,Math.round(k/4));imp.rects=toRects(mask,w,h,gr);if(imp.rects.length>6000)imp.rects=[];
   imp.ops=[];
-  if(imp.rects.length){const fo=findOpenings(mask,dark,w,h,k,mode),ticks=findTicks(dark,w,h,st.t1);imp.rects=imp.rects.concat(fo.walls);
+  if(imp.rects.length){const ticks=findTicks(dark,w,h,st.t1),clean=mode==='fill'&&ticks.length<3, // disegno a muri pieni senza le tacche catastali
+      fo=findOpenings(mask,dark,w,h,k,mode,clean?faintInk(imp.norm,w,h,mask):null);
+    if(clean&&dropSymbols(mask,w,h,fo.ops)){imp.rects=toRects(mask,w,h,gr);fo.ops=fo.ops.filter(o=>!o.dead);}imp.rects=imp.rects.concat(fo.walls);
     imp.ops=ticks.length>=3?opsFromTicks(ticks,fo.ops,dark,w,h,st.t1):fo.ops;imp.ticks=ticks.length;}
   paintPreview();impStatus();}
 function schedule(){clearTimeout(imp.busy);imp.busy=setTimeout(analyze,90);}
 function paintPreview(){const c=$('ipv');if(!imp.cv)return;const x=c.getContext('2d');x.drawImage(imp.cv,0,0);
   x.fillStyle='rgba(230,170,0,0.35)';for(const r of imp.texts)x.fillRect(r[0]-1,r[1]-1,r[2]-r[0]+2,r[3]-r[1]+2);
   x.fillStyle='rgba(214,40,40,0.55)';for(const r of imp.rects)x.fillRect(r[0],r[1],r[2]-r[0],r[3]-r[1]);
-  for(const o of imp.ops){x.fillStyle=o[4]==='door'?'rgba(20,150,60,0.75)':'rgba(20,90,220,0.75)';x.fillRect(o[0],o[1],o[2]-o[0],o[3]-o[1]);}
+  for(const o of imp.ops){x.fillStyle=o[4]==='door'?'rgba(20,150,60,0.75)':o[4]==='pf'?'rgba(0,170,200,0.8)':'rgba(20,90,220,0.75)';x.fillRect(o[0],o[1],o[2]-o[0],o[3]-o[1]);}
   if(imp.line){const l=imp.line,lw=Math.max(2,imp.w/350);x.strokeStyle='#0b62d6';x.fillStyle='#0b62d6';x.lineWidth=lw;x.beginPath();x.moveTo(l[0],l[1]);x.lineTo(l[2],l[3]);x.stroke();
     for(const q of [[l[0],l[1]],[l[2],l[3]]]){x.beginPath();x.arc(q[0],q[1],lw*2,0,6.2832);x.fill();}}}
 const UNIT={m:1,cm:0.01,mm:0.001};
@@ -888,7 +919,9 @@ function prepare(src,meta,name){const sw=src.naturalWidth||src.width,sh=src.natu
   // tipo di muri e spessore di partenza, dallo spessore dei tratti del disegno
   const dk=darkOf();if($('itext').checked)findText(dk,w,h);const st=strokeStats(dk,w,h),fill=st.thick>=0.18;
   $('imode').value=fill?'fill':'hollow';$('ithkl').textContent=fill?'Spessore minimo':'Spessore massimo';
-  let k=fill?Math.round((st.t1+st.t2)/2):14;if(!fill&&imp.unitPx>0){const s=imp.unitPx*(UNIT[$('iunit').value]||1)/f;if(s>0)k=Math.round(0.34/s);}
+  let k=fill?Math.max(st.t1+1,Math.round((st.t1+st.tp)/2)):14;
+  if(fill){ // le linee sottili sbiadite dal rimpicciolimento si vedono solo con una soglia più larga: servono a capire se i tratti più sottili del disegno sono tramezzi
+    const sl=strokeStats(darkOf(Math.min(200,thr+45)),w,h);imp.dbg=[st.t1,st.tp,sl.t1,sl.tp,+sl.thick.toFixed(2)];if(sl.t1<st.t1&&sl.thick>=0.18)k=Math.min(k,Math.max(sl.t1+2,Math.round((sl.t1+sl.tp)/2)));}if(!fill&&imp.unitPx>0){const s=imp.unitPx*(UNIT[$('iunit').value]||1)/f;if(s>0)k=Math.round(0.34/s);}
   k=Math.max(2,Math.min(40,k));$('ithk').value=String(k);$('ithko').textContent=k+' px';
   $('iscfl').hidden=!(imp.unitPx>0);if(imp.unitPx>0)$('iscf').checked=true;else if($('iscf').checked)$('iscm').checked=true;
   if(meta.dpi){$('idpi').value=String(Math.round(meta.dpi));if(meta.scaleN){$('iscale').value=String(meta.scaleN);$('iscd').checked=true;}}

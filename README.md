@@ -59,9 +59,10 @@ L'immagine viene portata a 1200 px sul lato lungo e passa per questi stadi:
 1. Scala di grigi e normalizzazione locale dell'illuminazione (utile per le foto con ombre).
 2. Soglia di Otsu.
 3. **Esclusione delle scritte**: le componenti connesse piccole e allineate vengono raggruppate come testo e cancellate.
-4. Stima dello spessore dei tratti per scegliere la modalità: muri *pieni* (apertura morfologica) o *a doppia linea* (chiusura e apertura).
+4. Stima dello spessore dei tratti per scegliere la modalità: muri *pieni* o *a doppia linea* (chiusura e apertura, resi comunque come muri pieni).
+   Nei disegni a muri pieni lo spessore minimo viene messo a metà tra le linee sottili (arredi, ante, scale) e il muro più sottile, così restano anche i tramezzi. Vengono poi scartati la cornice del foglio, i pezzi piccoli staccati dall'edificio (legenda, scala grafica) e i simboli pieni come frecce e nord.
 5. Scomposizione dei muri in rettangoli allineati agli assi.
-6. **Porte e finestre**: interruzioni tra tratti di muro allineati; dove la pianta usa i trattini catastali, questi confermano le aperture.
+6. **Porte e finestre**: interruzioni tra tratti di muro allineati; dove la pianta usa i trattini catastali, questi confermano le aperture. Nei disegni a muri pieni senza trattini, un vano che dà sull'esterno è una finestra, o una portafinestra se sul lato interno è disegnata l'anta; gli altri sono porte.
 7. **Stanze**: riempimento su griglia da 4 cm delle zone chiuse da muri e aperture; restano fuori le zone aperte verso l'esterno e quelle sotto 0,6 m².
 
 ## Limiti noti
