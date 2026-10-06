@@ -88,6 +88,12 @@ button:disabled{opacity:.5;cursor:default}
 ul{margin:0;padding-left:18px;color:var(--muted);font-size:15px}
 li{margin-bottom:5px}
 .proj{border-block:1px solid var(--line);padding-block:10px}
+[hidden]{display:none!important}
+#opanel{display:flex;flex-direction:column;gap:10px;margin:0 0 12px}
+#oedit{border:1px solid var(--line);border-radius:6px;margin:0;padding:10px 12px 12px;display:flex;flex-direction:column;gap:10px;min-width:0}
+#oedit legend{font-family:var(--display);font-weight:600;font-size:16px;letter-spacing:.03em;padding:0 6px}
+.ogrid{display:grid;grid-template-columns:1fr auto auto;gap:6px 8px;align-items:center;font-size:15px}
+.ogrid select{grid-column:2 / 4;justify-self:start}.ogrid span{color:var(--muted);font-size:14px}
 .wrap.home>*:not(#home):not(#imp){display:none}
 .wrap:not(.home)>#home{display:none}
 #home{display:flex;flex-direction:column;gap:18px;padding-block:4vh 0}
@@ -209,10 +215,24 @@ li{margin-bottom:5px}
     <button id="t-mea" type="button" aria-pressed="false">Misura</button>
   </div>
   <p id="toolhint">Scegli uno strumento per modificare i muri o prendere una misura direttamente sulla pianta.</p>
+  <div id="opanel" hidden>
+    <label for="otype">Nuova apertura <select id="otype"><option value="door">Porta</option><option value="win">Finestra</option><option value="pf">Portafinestra</option><option value="gap">Varco aperto</option></select></label>
+    <label for="owid">Larghezza al clic <input id="owid" type="number" min="30" max="900" step="5" value="80"> cm</label>
+    <fieldset id="oedit" hidden><legend id="oleg">Apertura selezionata</legend>
+      <div class="ogrid" id="ofields">
+        <label for="etype">Tipo</label><select id="etype"><option value="door">Porta</option><option value="win">Finestra</option><option value="pf">Portafinestra</option><option value="gap">Varco aperto</option></select><span></span>
+        <label for="ew">Larghezza</label><input id="ew" type="number" min="30" max="900" step="1"><span>cm</span>
+        <label for="epos">Dall'inizio del muro</label><input id="epos" type="number" min="0" step="1"><span>cm</span>
+        <label for="esill">Davanzale</label><input id="esill" type="number" min="0" max="300" step="5"><span>cm</span>
+        <label for="etop">Altezza del vano</label><input id="etop" type="number" min="60" max="500" step="5"><span>cm</span>
+      </div>
+      <div class="controls"><button id="edel" type="button">Elimina apertura</button><span id="omsg" class="msg" role="status"></span></div>
+    </fieldset>
+  </div>
   <div class="controls">
     <label for="wth">Spessore <input id="wth" type="number" min="5" max="60" step="1" value="10"> cm</label>
     <button id="wundo" type="button" disabled>Annulla ultima</button>
-    <button id="wreset" type="button" disabled>Ripristina muri</button>
+    <button id="wreset" type="button" disabled>Ripristina muri e aperture</button>
     <button id="mclear" type="button" disabled>Cancella misure</button>
   </div>
   <hr>
@@ -293,21 +313,25 @@ const PRE=[['Letto matrimoniale',160,200,45,[0.86,0.84,0.80]],['Letto singolo',9
  ['Cucina lineare',240,60,90,[0.66,0.68,0.70]],['Frigorifero',60,65,185,[0.78,0.80,0.82]],['Lavatrice',60,60,85,[0.78,0.80,0.82]]];
 
 // ---------- stato del progetto corrente
-let ops=[],apo={},userRooms=null,showModel=true,curWalls=[],curOps=[],clickOps=[],tool='mob',wdraw=null,meas=[],measPos=[],items=[],selId=null,nextId=1;
+let ops=[],apo={},xops=[],selOp=null,odrag=null,odraw=null,userRooms=null,showModel=true,curWalls=[],curOps=[],clickOps=[],tool='mob',wdraw=null,meas=[],measPos=[],items=[],selId=null,nextId=1;
 const wkey=()=>P.id+'-muri',ikey=()=>P.id+'-mobili',akey=()=>P.id+'-aperture',rkey=()=>P.id+'-vani';
 const RPAL=[[0.88,0.78,0.56],[0.71,0.80,0.61],[0.60,0.76,0.83],[0.86,0.70,0.52],[0.77,0.70,0.81],[0.64,0.77,0.68],[0.79,0.71,0.62],[0.55,0.70,0.80],[0.85,0.74,0.74],[0.72,0.72,0.74]];
 const isRect=r=>Array.isArray(r)&&r.length>=4&&r.slice(0,4).every(v=>typeof v==='number'&&isFinite(v));
 const isRoom=r=>r&&typeof r.name==='string'&&typeof r.area==='number'&&isFinite(r.area)&&Array.isArray(r.c)&&r.c.length===2&&r.c.every(isFinite)&&Array.isArray(r.rects)&&r.rects.every(isRect)&&(r.col==null||(Array.isArray(r.col)&&r.col.length===3&&r.col.every(isFinite)));
-const roomsNow=()=>userRooms?userRooms.list:GEO.rooms,roomCol=r=>r.col||ROOMCOL[r.name]||SLAB,areasStale=()=>userRooms?!!userRooms.stale:(ops.length>0||Object.keys(apo).length>0);
+const roomsNow=()=>userRooms?userRooms.list:GEO.rooms,roomCol=r=>r.col||ROOMCOL[r.name]||SLAB,areasStale=()=>userRooms?!!userRooms.stale:(ops.length>0||Object.keys(apo).length>0||xops.length>0);
 function saveR(){if(userRooms)LS.set(rkey(),JSON.stringify(userRooms));else LS.del(rkey());}
 function touchRooms(){if(userRooms&&!userRooms.stale){userRooms.stale=true;saveR();}}
-function saveA(){LS.set(akey(),JSON.stringify(apo));touchRooms();}
+function apoOut(){return Object.assign({},apo,{add:xops});}
+function saveA(){LS.set(akey(),JSON.stringify(apoOut()));touchRooms();}
 function saveW(){LS.set(wkey(),JSON.stringify(ops));touchRooms();}
 function save(){LS.set(ikey(),JSON.stringify(items.map(f=>({name:f.name,w:f.w,d:f.d,h:f.h,x:f.x,z:f.z,col:f.col}))));}
 function loadState(){
-  ops=[];items=[];apo={};userRooms=null;
+  ops=[];items=[];apo={};xops=[];selOp=null;odrag=null;odraw=null;userRooms=null;
   try{const sv=JSON.parse(LS.get(rkey())||'null');if(sv&&Array.isArray(sv.list)&&sv.list.every(isRoom))userRooms={list:sv.list.map(r=>Object.assign({},r,{name:r.name.slice(0,40)})),stale:!!sv.stale};}catch(e){}
-  try{const sv=JSON.parse(LS.get(akey())||'null');if(sv&&typeof sv==='object'&&!Array.isArray(sv))for(const k of Object.keys(sv))if(/^\d+$/.test(k)&&TYPES.indexOf(sv[k])>=0)apo[k]=sv[k];}catch(e){}
+  try{const sv=JSON.parse(LS.get(akey())||'null'),hv=v=>typeof v==='number'&&isFinite(v)&&v>=0&&v<=6,cl=(v,none)=>{if(!v||typeof v!=='object')return null;const o={};
+      if(TYPES.indexOf(v.t)>=0&&(none||v.t!=='none'))o.t=v.t;if(isRect(v.r)&&v.r[2]>v.r[0]&&v.r[3]>v.r[1])o.r=v.r.slice(0,4);if(hv(v.sill))o.sill=v.sill;if(hv(v.top))o.top=v.top;if(v.n>=0&&isFinite(v.n))o.n=Math.floor(v.n);return o;};
+    if(sv&&typeof sv==='object'&&!Array.isArray(sv)){for(const k of Object.keys(sv)){if(!/^\d+$/.test(k)||+k>=GEO.ops.length)continue;const v=typeof sv[k]==='string'?{t:sv[k]}:sv[k],o=cl(v,true);if(o&&Object.keys(o).length)apo[k]=o;}
+      if(Array.isArray(sv.add))for(const v of sv.add){const o=cl(v,false);if(o&&o.r&&o.t)xops.push(o);}}}catch(e){}
   try{const sv=JSON.parse(LS.get(wkey())||'null');if(Array.isArray(sv))ops=sv.filter(o=>o&&(o.t==='add'||o.t==='cut')&&Array.isArray(o.r)&&o.r.length===4&&o.r.every(isFinite));}catch(e){}
   try{const sv=JSON.parse(LS.get(ikey())||'null');if(Array.isArray(sv))items=sv.filter(f=>f&&isFinite(f.x)&&isFinite(f.z)&&f.w>0&&f.d>0&&f.h>0&&Array.isArray(f.col));}catch(e){}
   items.forEach(f=>{f.id=nextId++;});selId=null;meas=[];wdraw=null;tool='mob';
@@ -315,12 +339,37 @@ function loadState(){
 function sub(r,c){if(c[0]>=r[2]||c[2]<=r[0]||c[1]>=r[3]||c[3]<=r[1])return [r];const o=[],z0=Math.max(r[1],c[1]),z1=Math.min(r[3],c[3]);
   if(c[1]>r[1])o.push([r[0],r[1],r[2],c[1]]);if(c[3]<r[3])o.push([r[0],c[3],r[2],r[3]]);if(c[0]>r[0])o.push([r[0],z0,c[0],z1]);if(c[2]<r[2])o.push([c[2],z0,r[2],z1]);
   return o.filter(q=>q[2]-q[0]>0.004&&q[3]-q[1]>0.004);}
-function recompute(){const eff=GEO.ops.map((o,i)=>apo[i]?[o[0],o[1],o[2],o[3],apo[i]]:o);
+// Aperture: quelle della pianta (con le modifiche in apo) più quelle aggiunte a mano (xops).
+// Ogni apertura è [x0,z0,x1,z1,tipo] con in più k (chiave), sill (davanzale) e top (altezza del vano), in metri.
+const ODEF={door:[0,2.1],win:[0.9,2.4],pf:[0,2.4],gap:[0,0],none:[0,0]};
+function mkOp(r,t,a,k){const o=[r[0],r[1],r[2],r[3],t],d=ODEF[t];o.k=k;o.n=(a&&a.n)||0;o.top=Math.min(HT,a&&isFinite(a.top)?a.top:d[1]);o.sill=t==='win'?Math.max(0,Math.min(o.top-0.2,a&&isFinite(a.sill)?a.sill:d[0])):0;return o;}
+function recompute(){const eff=GEO.ops.map((o,i)=>{const a=apo[i]||null;return mkOp((a&&a.r)||o,(a&&a.t)||o[4],a,String(i));});
+  xops.forEach((a,j)=>eff.push(mkOp(a.r,a.t,a,'a'+j)));
   let ws=GEO.walls.map(q=>({r:q.slice(0,4),h:HT})).concat(GEO.parapets.map(q=>({r:q.slice(0,4),h:1.0})));const dead=new Set();
-  for(const o of eff)if(o[4]==='none')ws.push({r:o.slice(0,4),h:HT});
-  for(const op of ops){if(op.t==='add')ws.push({r:op.r,h:HT});else{const c=op.r,n=[];for(const w of ws)for(const r of sub(w.r,c))n.push({r:r,h:w.h});ws=n;
-    eff.forEach((o,i)=>{const mx=(o[0]+o[2])/2,mz=(o[1]+o[3])/2;if(mx>c[0]&&mx<c[2]&&mz>c[1]&&mz<c[3])dead.add(i);});}}
-  curWalls=ws;curOps=eff.filter((o,i)=>!dead.has(i)&&o[4]!=='none');clickOps=eff.map((o,i)=>({o:o,i:i})).filter(q=>!dead.has(q.i));}
+  GEO.ops.forEach((o,i)=>{const a=apo[i];if(a&&(a.t==='none'||a.r))ws.push({r:o.slice(0,4),h:HT});});
+  ops.forEach((op,oi)=>{if(op.t==='add')ws.push({r:op.r,h:HT});else{const c=op.r,n=[];for(const w of ws)for(const r of sub(w.r,c))n.push({r:r,h:w.h});ws=n;
+    eff.forEach((o,i)=>{if(oi<o.n)return;const mx=(o[0]+o[2])/2,mz=(o[1]+o[3])/2;if(mx>c[0]&&mx<c[2]&&mz>c[1]&&mz<c[3])dead.add(i);});}});
+  eff.forEach((o,i)=>{if(dead.has(i)||o[4]==='none')return;if(o.k[0]!=='a'&&!(apo[o.k]&&apo[o.k].r))return;const n=[];for(const w of ws)for(const r of sub(w.r,o))n.push({r:r,h:w.h});ws=n;});
+  curWalls=ws;curOps=eff.filter((o,i)=>!dead.has(i)&&o[4]!=='none');clickOps=eff.filter((o,i)=>!dead.has(i)).map(o=>({o:o,k:o.k}));
+  if(selOp!==null&&!clickOps.some(q=>q.k===selOp))selOp=null;}
+const axisOf=o=>(o[2]-o[0])>=(o[3]-o[1])?0:1,opByKey=k=>{const q=clickOps.find(q=>q.k===k);return q?q.o:null;};
+function hitOp(g){let best=null;for(const q of clickOps){const o=q.o;if(g[0]>o[0]-0.12&&g[0]<o[2]+0.12&&g[1]>o[1]-0.12&&g[1]<o[3]+0.12){if(q.k===selOp)return q;if(!best)best=q;}}return best;}
+function wallAt(g){let best=null,bd=0.07;for(const w of curWalls){if(w.h<HT-0.01)continue;const r=w.r,dx=Math.max(r[0]-g[0],0,g[0]-r[2]),dz=Math.max(r[1]-g[1],0,g[1]-r[3]),d=Math.hypot(dx,dz);if(d<bd){bd=d;best=w;if(d===0)break;}}return best;}
+// tratto di muro continuo (muri e aperture allineati) che contiene l'apertura, lungo il suo asse
+function runOf(o,fax){const ax=fax==null?axisOf(o):fax,cx=1-ax,c0=o[cx],c1=o[cx+2],iv=[];const put=r=>{if(Math.min(r[cx+2],c1)-Math.max(r[cx],c0)>=(c1-c0)*0.5)iv.push([r[ax],r[ax+2]]);};
+  for(const w of curWalls)if(w.h>=HT-0.01)put(w.r);for(const q of curOps)put(q);
+  let a=o[ax],b=o[ax+2],ch=true;while(ch){ch=false;for(const v of iv){if(v[0]<a-1e-6&&v[1]>=a-0.011){a=v[0];ch=true;}if(v[1]>b+1e-6&&v[0]<=b+0.011){b=v[1];ch=true;}}}return [a,b];}
+// apertura di larghezza standard centrata sul punto toccato, dentro il tratto di muro libero
+const OSTD={door:80,win:120,pf:120,gap:90};
+function opAtClick(g,w){const ax=(w[2]-w[0])>=(w[3]-w[1])?0:1,cx=1-ax,pr=w.slice(0,4);pr[ax]=g[ax]-0.005;pr[ax+2]=g[ax]+0.005;const run=runOf(pr,ax);let lo=run[0],hi=run[1];
+  for(const q of curOps){if(Math.min(q[cx+2],w[cx+2])-Math.max(q[cx],w[cx])<=0.01)continue;if(q[ax+2]<=g[ax])lo=Math.max(lo,q[ax+2]);else if(q[ax]>=g[ax])hi=Math.min(hi,q[ax]);}
+  const want=Math.max(0.3,Math.min(9,(parseFloat($('owid').value)||OSTD[$('otype').value])/100)),len=Math.min(want,hi-lo);if(len<0.3)return null;
+  const st=Math.max(lo,Math.min(hi-len,Math.round((g[ax]-len/2)*100)/100)),r=w.slice(0,4);r[ax]=st;r[ax+2]=st+len;return {r:r,cut:len<want-0.005};}
+function opRec(k,make){if(k[0]==='a')return xops[+k.slice(1)];if(!apo[k]&&make)apo[k]={};return apo[k];}
+function opTidy(k){if(k[0]==='a')return;const a=apo[k],g=GEO.ops[k];if(!a)return;if(a.t===g[4])delete a.t;if(a.r&&a.r.every((v,i)=>Math.abs(v-g[i])<0.002)){delete a.r;}if(!a.r)delete a.n;if(!Object.keys(a).length)delete apo[k];}
+function opSetRect(k,r){const a=opRec(k,true);a.r=r.map(v=>Math.round(v*1000)/1000);a.n=ops.length;opTidy(k);}
+function opDraw(){if(!odraw)return null;const a=odraw.a,b=odraw.b,w=odraw.w,ax=Math.abs(b[0]-a[0])>=Math.abs(b[1]-a[1])?0:1,cx=1-ax,r=[0,0,0,0];
+  r[ax]=Math.round(Math.min(a[ax],b[ax])*20)/20;r[ax+2]=Math.round(Math.max(a[ax],b[ax])*20)/20;r[cx]=w[cx];r[cx+2]=w[cx+2];return r;}
 function drawRect(){if(!wdraw)return null;const a=wdraw.a,b=wdraw.b;
   if(tool==='cut')return [Math.min(a[0],b[0]),Math.min(a[1],b[1]),Math.max(a[0],b[0]),Math.max(a[1],b[1])];
   const th=wdraw.th/2;if(Math.abs(b[0]-a[0])>=Math.abs(b[1]-a[1]))return [Math.min(a[0],b[0]),a[1]-th,Math.max(a[0],b[0]),a[1]+th];
@@ -335,15 +384,16 @@ function build(){
   if(userRooms||!P.builtin)for(const r of roomsNow()){const c=roomCol(r);for(const q of r.rects)box(O,q[0],q[1],q[2],q[3],0,0.006,c);}
   if(showModel)for(const w of curWalls)box(O,w.r[0],w.r[1],w.r[2],w.r[3],0,Math.min(w.h,h),WALL,h<w.h-0.01?CUT:WALL);
   const prv=tool==='mea'?null:drawRect();if(prv&&prv[2]-prv[0]>0.01&&prv[3]-prv[1]>0.01){if(tool==='cut')box(T,prv[0],prv[1],prv[2],prv[3],0,Math.min(HT,h)+0.03,[0.85,0.2,0.15],null,0.4);else box(T,prv[0],prv[1],prv[2],prv[3],0,Math.min(HT,h)+0.02,[0.1,0.55,0.5],null,0.6);}
-  if(tool==='ope')for(const q of clickOps){const o=q.o;box(T,o[0]-0.03,o[1]-0.03,o[2]+0.03,o[3]+0.03,0,Math.min(HT,h)+0.05,TCOL[o[4]],null,0.5);}
+  if(tool==='ope'){for(const q of clickOps){const o=q.o,sl=q.k===selOp;box(T,o[0]-0.03,o[1]-0.03,o[2]+0.03,o[3]+0.03,0,Math.min(HT,h)+(sl?0.12:0.05),sl?[0.96,0.60,0.20]:TCOL[o[4]],null,sl?0.8:0.5);}
+    const nr=opDraw();if(nr&&nr[2]-nr[0]>0.01&&nr[3]-nr[1]>0.01)box(T,nr[0],nr[1],nr[2],nr[3],0,Math.min(HT,h)+0.14,TCOL[$('otype').value],null,0.75);}
   for(const q of GEO.treads.concat(GEO.lift)){ if(Math.abs(q[0]-q[2])>1e-6&&Math.abs(q[1]-q[3])>1e-6)continue;
     box(O,Math.min(q[0],q[2])-0.015,Math.min(q[1],q[3])-0.015,Math.max(q[0],q[2])+0.015,Math.max(q[1],q[3])+0.015,0,0.012,TREAD);}
   if(showGlass&&showModel)for(const q of curOps){const t=q[4],x0=q[0],z0=q[1],x1=q[2],z1=q[3];if(t==='gap')continue;
-    const lin=t==='door'?2.1:2.4; if(h>lin)box(O,x0,z0,x1,z1,lin,Math.min(HT,h),WALL,top);
-    if(t==='win')box(O,x0,z0,x1,z1,0,Math.min(0.9,h),WALL,h<0.9?CUT:WALL);
-    if(t!=='door'){const g0=t==='win'?0.9:0.02,g1=Math.min(2.4,h);
+    const lin=q.top; if(h>lin&&lin<HT-0.005)box(O,x0,z0,x1,z1,lin,Math.min(HT,h),WALL,top);
+    if(q.sill>0.005)box(O,x0,z0,x1,z1,0,Math.min(q.sill,h),WALL,h<q.sill?CUT:WALL);
+    if(t!=='door'){const g0=Math.max(q.sill,0.02),g1=Math.min(lin,h);if(g1>g0+0.01){
       if(x1-x0<z1-z0){const m=(x0+x1)/2;box(T,m-0.02,z0,m+0.02,z1,g0,g1,[0.55,0.78,0.9],null,0.38);}
-      else{const m=(z0+z1)/2;box(T,x0,m-0.02,x1,m+0.02,g0,g1,[0.55,0.78,0.9],null,0.38);}}}
+      else{const m=(z0+z1)/2;box(T,x0,m-0.02,x1,m+0.02,g0,g1,[0.55,0.78,0.9],null,0.38);}}}}
   for(const f of items){const sl=f.id===selId;box(O,f.x-f.w/2,f.z-f.d/2,f.x+f.w/2,f.z+f.d/2,0.02,f.h,f.col,sl?[0.96,0.60,0.20]:f.col.map(v=>Math.min(1,v*1.12)));}
   gl.bindBuffer(gl.ARRAY_BUFFER,bufO);gl.bufferData(gl.ARRAY_BUFFER,new Float32Array(O),gl.STATIC_DRAW);nO=O.length/10;
   gl.bindBuffer(gl.ARRAY_BUFFER,bufT);gl.bufferData(gl.ARRAY_BUFFER,new Float32Array(T),gl.STATIC_DRAW);nT=T.length/10;
@@ -408,13 +458,19 @@ function pan(dx,dy){const k=cam.dist*0.0016,c=Math.cos(cam.yaw),s=Math.sin(cam.y
 const pts=new Map();let pinch=0,drag=null,moved=false,dn=[0,0];
 canvas.addEventListener('pointerdown',e=>{canvas.setPointerCapture(e.pointerId);pts.set(e.pointerId,[e.clientX,e.clientY]);pinch=0;moved=false;drag=null;dn=[e.clientX,e.clientY];
   if(pts.size===1&&!e.shiftKey&&e.button===0){
-    if(tool==='ope')return;
+    if(tool==='ope'){const g=ground(e);odrag=null;odraw=null;if(!g)return;const hit=hitOp(g);
+      if(hit){selOp=hit.k;if(hit.o[4]!=='none'){const ax=axisOf(hit.o);odrag={k:hit.k,ax:ax,off:g[ax]-hit.o[ax],run:runOf(hit.o),len:hit.o[ax+2]-hit.o[ax],did:false};}opUi();build();req();return;}
+      const w=wallAt(g);if(w)odraw={a:g.slice(),b:g.slice(),w:w.r};else if(selOp!==null){selOp=null;opUi();build();req();}return;}
     if(tool!=='mob'){const g=ground(e);if(g){const ed=edges(),gr=tool==='mea'?100:20,a=[snap(g[0],ed.x,gr),snap(g[1],ed.z,gr)];wdraw={a:a,b:a.slice(),ed:ed,g:gr,th:Math.max(0.05,Math.min(0.6,(parseFloat($('wth').value)||10)/100))};}return;}
     const f=pick(e),g=ground(e);if(f){select(f.id);if(g)drag={f:f,ox:f.x-g[0],oz:f.z-g[1]};}}});
 function edges(){const x=[],z=[];for(const w of curWalls){x.push(w.r[0],w.r[2]);z.push(w.r[1],w.r[3]);}return {x:x,z:z};}
 function snap(v,arr,g){let b=null,bd=0.08;for(const q of arr){const d=Math.abs(q-v);if(d<bd){bd=d;b=q;}}return b===null?Math.round(v*(g||20))/(g||20):b;}
 canvas.addEventListener('pointermove',e=>{const p=pts.get(e.pointerId);if(!p)return;const dx=e.clientX-p[0],dy=e.clientY-p[1];pts.set(e.pointerId,[e.clientX,e.clientY]);
   if(Math.hypot(e.clientX-dn[0],e.clientY-dn[1])>4)moved=true;
+  if(tool==='ope'&&pts.size===1&&(odrag||odraw)){const g=ground(e);if(!g||!moved)return;
+    if(odraw){odraw.b=g.slice();build();req();return;}
+    const o=opByKey(odrag.k);if(!o)return;const ax=odrag.ax,st=Math.max(odrag.run[0],Math.min(odrag.run[1]-odrag.len,Math.round((g[ax]-odrag.off)*100)/100));
+    if(Math.abs(st-o[ax])>0.004){const r=o.slice(0,4);r[ax]=st;r[ax+2]=st+odrag.len;opSetRect(odrag.k,r);odrag.did=true;recompute();opUi();build();req();}return;}
   if(wdraw&&pts.size===1){const g=ground(e);if(g){wdraw.b=[snap(g[0],wdraw.ed.x,wdraw.g),snap(g[1],wdraw.ed.z,wdraw.g)];if(tool!=='mea')build();req();}return;}
   if(drag&&pts.size===1){const g=ground(e);if(g){drag.f.x=Math.max(0,Math.min(GEO.ext[0],Math.round((g[0]+drag.ox)*20)/20));drag.f.z=Math.max(0,Math.min(GEO.ext[1],Math.round((g[1]+drag.oz)*20)/20));build();req();}return;}
   if(pts.size>=2){const a=[...pts.values()],d=Math.hypot(a[0][0]-a[1][0],a[0][1]-a[1][1]);if(pinch)cam.dist*=pinch/d;pinch=d;pan(dx/2,dy/2);}
@@ -422,9 +478,14 @@ canvas.addEventListener('pointermove',e=>{const p=pts.get(e.pointerId);if(!p)ret
   else{cam.yaw-=dx*0.006;cam.pitch+=dy*0.006;}
   clamp();req();});
 function up(e){pts.delete(e.pointerId);pinch=0;
-  if(tool==='ope'){if(!moved&&e.type==='pointerup'){const g=ground(e);let hit=null;if(g)for(const q of clickOps){const o=q.o;if(g[0]>o[0]-0.12&&g[0]<o[2]+0.12&&g[1]>o[1]-0.12&&g[1]<o[3]+0.12){hit=q;break;}}
-      if(hit){const nx=TYPES[(TYPES.indexOf(hit.o[4])+1)%TYPES.length];if(nx===GEO.ops[hit.i][4])delete apo[hit.i];else apo[hit.i]=nx;saveA();recompute();wallUi();build();
-        $('toolhint').textContent='Apertura impostata come '+TNAME[nx]+'. Tocca di nuovo per cambiare ancora.';}}
+  if(tool==='ope'){
+    if(odraw){const od=odraw,r=opDraw(),ax=(r[2]-r[0])>=(r[3]-r[1])?0:1,cx=1-ax,len=r[ax+2]-r[ax],th=r[cx+2]-r[cx];odraw=null;let m='';
+      const addOp=(rr,msg)=>{xops.push({r:rr.map(v=>Math.round(v*1000)/1000),t:$('otype').value,n:ops.length});saveA();recompute();selOp='a'+(xops.length-1);m=msg;};
+      if(e.type==='pointerup'&&!moved){const c=opAtClick(od.a,od.w);if(!c)m='Qui il muro libero è più corto di 30 cm: non c\'è posto per un\'apertura.';else addOp(c.r,c.cut?'Apertura aggiunta, più stretta della larghezza scelta perché il muro libero è più corto.':'Apertura aggiunta: qui sotto puoi cambiarne tipo, misure e altezze.');}
+      else if(e.type==='pointerup'&&moved){if(len<0.3)m='Apertura troppo stretta: trascina per almeno 30 cm lungo il muro.';else if(th>0.9||th>len*1.5)m='Trascina lungo il muro, non di traverso.';
+        else addOp(r,'Apertura aggiunta: qui sotto puoi cambiarne tipo, misure e altezze.');}
+      wallUi();build();if(m)$('toolhint').textContent=m;req();return;}
+    if(odrag){const d=odrag.did;odrag=null;if(d){saveA();wallUi();build();}}
     req();return;}
   if(wdraw&&tool==='mea'){const m=wdraw;wdraw=null;if(e.type==='pointerup'&&Math.hypot(m.b[0]-m.a[0],m.b[1]-m.a[1])>0.02)meas.push({a:m.a,b:m.b});wallUi();req();return;}
   if(wdraw){const r=drawRect();wdraw=null;const lx=r[2]-r[0],lz=r[3]-r[1];
@@ -507,16 +568,32 @@ const HINTS={mob:'Scegli uno strumento per modificare i muri o prendere una misu
   mea:'Trascina da un punto all\'altro per leggere la distanza. Gli estremi si agganciano agli spigoli dei muri; altrove la misura va a scatti di 1 cm. Le misure restano sulla vista finché non le cancelli.',
   add:'Trascina sulla pianta da un punto all\'altro: nasce un muro dritto, dello spessore indicato, alto fino al soffitto. Gli estremi si agganciano ai muri vicini.',
   cut:'Trascina un rettangolo sulla pianta: tutti i muri al suo interno vengono tolti, comprese finestre e porte che contiene.',
-  ope:'Tocca un\'apertura colorata per cambiarne il tipo: porta (verde), finestra (blu), portafinestra (azzurro), varco aperto senza architrave (giallo), muro pieno (rosso).'};
+  ope:'Per aggiungere un\'apertura scegli il tipo, poi tocca un muro (larghezza standard) oppure trascina lungo il muro (larghezza libera). Tocca un\'apertura colorata per selezionarla e modificarla; trascinala per spostarla lungo il muro. Colori: porta verde, finestra blu, portafinestra azzurro, varco giallo, apertura eliminata rosso.'};
+function opUi(){const on=tool==='ope';$('opanel').hidden=!on;if(!on)return;const o=selOp!==null?opByKey(selOp):null;$('oedit').hidden=!o;if(!o)return;
+  const none=o[4]==='none',ax=axisOf(o),run=none?[o[ax],o[ax+2]]:(odrag&&odrag.k===selOp?odrag.run:runOf(o));
+  $('oleg').textContent=none?'Apertura eliminata (muro pieno)':TNAME[o[4]].charAt(0).toUpperCase()+TNAME[o[4]].slice(1)+' selezionata';$('ofields').hidden=none;$('edel').textContent=none?'Ripristina apertura':'Elimina apertura';if(none)return;
+  $('etype').value=o[4];$('ew').value=cm(o[ax+2]-o[ax]);$('ew').max=cm(run[1]-run[0]);$('epos').value=cm(o[ax]-run[0]);$('epos').max=Math.max(0,cm(run[1]-run[0]-(o[ax+2]-o[ax])));
+  $('esill').value=cm(o.sill);$('esill').disabled=o[4]!=='win';$('etop').value=cm(o[4]==='gap'?HT:o.top);$('etop').disabled=o[4]==='gap';$('etop').max=cm(HT);}
+function opCommit(msg){saveA();recompute();wallUi();build();req();$('omsg').textContent=msg||'';}
+function opEdit(fn){return ()=>{const o=selOp!==null?opByKey(selOp):null;if(!o)return;fn(o,opRec(selOp,true));opTidy(selOp);opCommit();};}
+$('otype').addEventListener('change',()=>{$('owid').value=OSTD[$('otype').value];});
+$('etype').addEventListener('change',opEdit((o,a)=>{a.t=$('etype').value;delete a.sill;delete a.top;}));
+$('ew').addEventListener('change',opEdit((o,a)=>{const ax=axisOf(o),run=runOf(o),len=Math.max(0.3,Math.min(run[1]-run[0],(parseFloat($('ew').value)||0)/100)),r=o.slice(0,4);if(o[ax]+len>run[1])r[ax]=run[1]-len;r[ax+2]=r[ax]+len;a.r=r.map(v=>Math.round(v*1000)/1000);a.n=ops.length;}));
+$('epos').addEventListener('change',opEdit((o,a)=>{const ax=axisOf(o),run=runOf(o),len=o[ax+2]-o[ax],st=Math.max(run[0],Math.min(run[1]-len,run[0]+(parseFloat($('epos').value)||0)/100)),r=o.slice(0,4);r[ax]=st;r[ax+2]=st+len;a.r=r.map(v=>Math.round(v*1000)/1000);a.n=ops.length;}));
+$('esill').addEventListener('change',opEdit((o,a)=>{a.sill=Math.max(0,Math.min(o.top-0.2,(parseFloat($('esill').value)||0)/100));}));
+$('etop').addEventListener('change',opEdit((o,a)=>{a.top=Math.max(o.sill+0.2,0.6,Math.min(HT,(parseFloat($('etop').value)||0)/100));}));
+$('edel').addEventListener('click',()=>{const o=selOp!==null?opByKey(selOp):null;if(!o)return;
+  if(selOp[0]==='a'){const j=+selOp.slice(1),renum=ops=>ops;xops.splice(j,1);selOp=null;opCommit();$('toolhint').textContent='Apertura eliminata: il muro è stato richiuso.';return;}
+  const a=opRec(selOp,true);if(o[4]==='none'){delete a.t;opTidy(selOp);opCommit('Apertura ripristinata.');}else{a.t='none';opCommit('Il muro è stato richiuso. Puoi ripristinarla da qui.');}});
 let armedW=false;const coarse=window.matchMedia('(pointer:coarse)').matches;
-function wallUi(){for(const k of ['mob','add','cut','ope','mea'])$('t-'+k).setAttribute('aria-pressed',tool===k?'true':'false');$('toolhint').textContent=tool==='ope'&&!GEO.ops.length?'In questa pianta non ci sono aperture riconosciute da correggere.':HINTS[tool];
-  $('wundo').disabled=!ops.length;$('wreset').disabled=!ops.length&&!Object.keys(apo).length;$('mclear').disabled=!meas.length;$('wreset').textContent='Ripristina muri';armedW=false;$('areanote').hidden=!(roomsNow().length&&areasStale());canvas.style.cursor=tool==='mob'?'':'crosshair';
-  $('hint').textContent=tool==='mob'?(coarse?'Un dito: ruota o sposta un mobile · Due dita: vista':'Trascina: ruota · Maiusc + trascina: sposta la vista · Rotella: zoom · Trascina un mobile: lo sposti'):(tool==='add'?'Trascina per disegnare un muro':tool==='mea'?'Trascina tra due punti per misurare':tool==='ope'?'Tocca una porta o una finestra per cambiarne il tipo':'Trascina un rettangolo sui muri da togliere')+(coarse?' · Due dita: sposta la vista':' · Maiusc + trascina: sposta la vista');}
-function setTool(k){tool=k;wdraw=null;if(k!=='mob'){select(null);Object.assign(cam,{yaw:0,pitch:1.55,dist:Math.max(cam.dist,HOME.dist*0.7)});}wallUi();build();req();}
+function wallUi(){for(const k of ['mob','add','cut','ope','mea'])$('t-'+k).setAttribute('aria-pressed',tool===k?'true':'false');$('toolhint').textContent=HINTS[tool];opUi();
+  $('wundo').disabled=!ops.length;$('wreset').disabled=!ops.length&&!Object.keys(apo).length&&!xops.length;$('wreset').textContent='Ripristina muri e aperture';$('mclear').disabled=!meas.length;armedW=false;$('areanote').hidden=!(roomsNow().length&&areasStale());canvas.style.cursor=tool==='mob'?'':'crosshair';
+  $('hint').textContent=tool==='mob'?(coarse?'Un dito: ruota o sposta un mobile · Due dita: vista':'Trascina: ruota · Maiusc + trascina: sposta la vista · Rotella: zoom · Trascina un mobile: lo sposti'):(tool==='add'?'Trascina per disegnare un muro':tool==='mea'?'Trascina tra due punti per misurare':tool==='ope'?'Tocca o trascina su un muro: nuova apertura · Tocca un\'apertura: la modifichi':'Trascina un rettangolo sui muri da togliere')+(coarse?' · Due dita: sposta la vista':' · Maiusc + trascina: sposta la vista');}
+function setTool(k){tool=k;wdraw=null;odraw=null;odrag=null;if(k!=='ope')selOp=null;if(k!=='mob'){select(null);Object.assign(cam,{yaw:0,pitch:1.55,dist:Math.max(cam.dist,HOME.dist*0.7)});}wallUi();build();req();}
 $('t-mob').addEventListener('click',()=>setTool('mob'));$('t-add').addEventListener('click',()=>setTool('add'));$('t-cut').addEventListener('click',()=>setTool('cut'));$('t-ope').addEventListener('click',()=>setTool('ope'));$('t-mea').addEventListener('click',()=>setTool('mea'));
 $('mclear').addEventListener('click',()=>{meas=[];wallUi();req();});
 $('wundo').addEventListener('click',()=>{ops.pop();saveW();recompute();wallUi();build();req();});
-$('wreset').addEventListener('click',()=>{if(!armedW){armedW=true;$('wreset').textContent='Conferma: ripristina';return;}ops=[];apo={};saveW();saveA();recompute();wallUi();build();req();});
+$('wreset').addEventListener('click',()=>{if(!armedW){armedW=true;$('wreset').textContent='Conferma: ripristina';return;}ops=[];apo={};xops=[];selOp=null;saveW();saveA();recompute();wallUi();build();req();});
 
 // ---------- testi che dipendono dal progetto
 const NOTES_BUILTIN=['Questo appartamento è inventato: serve solo a provare la pagina e non corrisponde a un edificio reale.',
@@ -526,7 +603,7 @@ const NOTES_BUILTIN=['Questo appartamento è inventato: serve solo a provare la 
  'Muri e mobili che modifichi restano salvati in questo browser. Dopo aver cambiato i muri, "Ricalcola le stanze" ridefinisce vani e superfici; i nomi si possono riscrivere nella tabella.'];
 const NOTES_IMPORT=['Muri, porte e finestre sono stati riconosciuti automaticamente dal file. Confrontali con la pianta di sfondo e correggili con "Aggiungi muro", "Demolisci" e "Porte e finestre".',
  'Porte e finestre sono riconosciute dalla tacca che le attraversa nelle planimetrie catastali; dove le tacche mancano, come interruzioni tra due tratti di muro allineati. Il tipo è una stima: con lo strumento "Porte e finestre" tocchi un\'apertura per cambiarla in porta, finestra, portafinestra, varco aperto o muro pieno.',
- 'Un\'apertura può sfuggire, o un semplice vuoto tra due muri può essere preso per una porta. Porte a 2,10 m, davanzali a 0,90 m e architravi a 2,40 m sono valori tipici.',
+ 'Un\'apertura può sfuggire, o un semplice vuoto tra due muri può essere preso per una porta: con "Porte e finestre" ne aggiungi di nuove trascinando lungo un muro, le sposti, le allarghi o le elimini. Porte a 2,10 m, davanzali a 0,90 m e architravi a 2,40 m sono i valori di partenza, modificabili per ogni apertura.',
  'Le scritte vengono riconosciute dalla forma (gruppi di piccoli segni allineati) ed escluse; non vengono lette. Una scritta attaccata a un muro, un retino o un arredo possono ancora essere scambiati per muri, soprattutto quando i muri sono a doppia linea.',
  'I muri obliqui o curvi sono resi a gradini. Se l\'immagine è storta o fotografata di sbieco, conviene raddrizzarla prima di importarla.',
  'Tutte le misure dipendono dalla scala che hai impostato durante l\'importazione. Controllane una con lo strumento "Misura".',
@@ -615,7 +692,7 @@ $('modon').addEventListener('change',e=>{showModel=e.target.checked;build();req(
 // ---------- salvataggio su file: progetto completo e DXF
 function slug(){return P.name.toLowerCase().normalize('NFD').replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/g,'')||'pianta';}
 function projectFile(){return {app:'planner-piante-3d',v:1,name:P.name,ht:HT,geo:{walls:GEO.walls,ops:GEO.ops,parapets:GEO.parapets,treads:GEO.treads,rooms:GEO.rooms.map(r=>({name:r.name,area:r.area,c:r.c,rects:r.rects,col:roomCol(r)})),w:GEO.ext[0],d:GEO.ext[1],img:P.img||null},
-  muri:ops,aperture:apo,mobili:items.map(f=>({name:f.name,w:f.w,d:f.d,h:f.h,x:f.x,z:f.z,col:f.col})),vani:userRooms};}
+  muri:ops,aperture:apoOut(),mobili:items.map(f=>({name:f.name,w:f.w,d:f.d,h:f.h,x:f.x,z:f.z,col:f.col})),vani:userRooms};}
 function openProject(text){let o;try{o=JSON.parse(text);}catch(e){return 'Questo file non è un progetto salvato da questa pagina.';}
   const g=o&&o.geo;if(!o||o.app!=='planner-piante-3d'||!g||!Array.isArray(g.walls)||!(g.w>0)||!(g.d>0))return 'Questo file non è un progetto salvato da questa pagina.';
   const walls=g.walls.filter(isRect);if(!walls.length)return 'Il progetto non contiene muri.';
